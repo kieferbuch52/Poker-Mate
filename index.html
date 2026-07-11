@@ -19,7 +19,10 @@
       <p class="eyebrow">POKER COMPANION</p>
       <h1>Poker Mate</h1>
     </div>
-    <button id="installBtn" class="ghost hidden">ホーム画面に追加</button>
+    <div class="top-actions">
+      <span id="appVersion" class="version-badge">v3.1.0</span>
+      <button id="installBtn" class="ghost hidden">ホーム画面に追加</button>
+    </div>
   </header>
 
   <main>
@@ -204,6 +207,54 @@
         <button class="primary" type="submit">店舗を保存</button>
       </form>
 
+
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">CHIP TRANSACTION</p>
+            <h3>店舗チップの購入・換金</h3>
+          </div>
+          <span id="chipTransactionBalance" class="version-badge">店舗を選択</span>
+        </div>
+
+        <form id="chipTransactionForm" class="form-panel">
+          <div class="grid two">
+            <label>店舗
+              <select id="chipTransactionVenue" required></select>
+            </label>
+            <label>日付
+              <input id="chipTransactionDate" type="date" required>
+            </label>
+          </div>
+          <div class="grid two">
+            <label>取引
+              <select id="chipTransactionType">
+                <option value="purchase">現金でチップを購入（残高＋）</option>
+                <option value="cashout">チップを現金化（残高−）</option>
+              </select>
+            </label>
+            <label>チップ額
+              <input id="chipTransactionAmount" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="例：5000" required>
+            </label>
+          </div>
+          <label>メモ
+            <input id="chipTransactionMemo" type="text" placeholder="例：受付で追加購入、帰宅前に換金">
+          </label>
+          <div id="chipTransactionPreview" class="result-box">店舗を選択してください。</div>
+          <button id="chipTransactionSubmit" class="primary" type="submit">チップ購入を記録</button>
+        </form>
+
+        <div class="divider"></div>
+        <div class="section-head">
+          <h3>購入・換金履歴</h3>
+          <select id="chipTransactionFilter" class="small-select">
+            <option value="all">すべての店舗</option>
+          </select>
+        </div>
+        <div id="chipTransactionList" class="card-list compact-list"></div>
+        <p class="hint">購入・換金は店舗のチップ残高だけを動かします。ポーカー資金全体のバンクロールは、現金とチップの持ち方が変わるだけなので増減しません。外部資金を追加した場合は、バンクロール画面でも「入金」を記録してください。</p>
+      </section>
+
       <div id="venueList" class="card-list"></div>
     </section>
 
@@ -211,8 +262,13 @@
       <div class="page-title">
         <div>
           <p class="eyebrow">PREFLOP RANGE</p>
-          <h2>6-max RFIレンジ表</h2>
+          <h2 id="rangePageTitle">6-max RFIレンジ表</h2>
         </div>
+      </div>
+
+      <div class="segmented two">
+        <button class="segment active" data-range-mode="rfi">オープンレンジ</button>
+        <button class="segment" data-range-mode="bb">BBディフェンス</button>
       </div>
 
       <section class="panel">
@@ -223,12 +279,9 @@
           <button class="segment" data-position="BTN">BTN</button>
           <button class="segment" data-position="SB">SB</button>
         </div>
-        <div class="range-legend">
-          <span><i class="dot open"></i>オープン</span>
-          <span><i class="dot fold"></i>フォールド</span>
-        </div>
+        <div id="rangeLegend" class="range-legend"></div>
         <div id="rangeGrid" class="hand-grid" aria-label="ハンドレンジ表"></div>
-        <p class="hint">標準的な100BB・6-maxの学習用簡易レンジです。レーキ、相手、オープンサイズに応じて調整してください。</p>
+        <p id="rangeHint" class="hint"></p>
       </section>
     </section>
 
@@ -240,10 +293,12 @@
         </div>
       </div>
 
-      <div class="segmented three">
-        <button class="segment active" data-tool="odds">必要勝率</button>
-        <button class="segment" data-tool="draw">アウト・ドロー</button>
-        <button class="segment" data-tool="power">パワーナンバー</button>
+      <div class="segmented tool-tabs">
+        <button class="segment active" data-tool="odds">ベット対応</button>
+        <button class="segment" data-tool="raise">対レイズ</button>
+        <button class="segment" data-tool="equity">勝率計算</button>
+        <button class="segment" data-tool="draw">アウト</button>
+        <button class="segment" data-tool="power">PN</button>
       </div>
 
       <section id="oddsTool" class="panel">
@@ -279,6 +334,79 @@
         </div>
       </section>
 
+
+
+      <section id="raiseTool" class="panel hidden">
+        <h3>レイズされたときの必要勝率</h3>
+        <div class="grid two">
+          <label>自分がベットする前のポット
+            <input id="raisePot" type="number" inputmode="decimal" min="0" value="100">
+          </label>
+          <label>自分のベット額
+            <input id="raiseOwnBet" type="number" inputmode="decimal" min="0" value="50">
+          </label>
+        </div>
+        <label>相手のレイズ額（合計額・raise to）
+          <input id="raiseTo" type="number" inputmode="decimal" min="0" value="150">
+        </label>
+        <div class="preset-row">
+          <button type="button" data-raise-multiple="2">2x</button>
+          <button type="button" data-raise-multiple="2.5">2.5x</button>
+          <button type="button" data-raise-multiple="3">3x</button>
+          <button type="button" data-raise-multiple="4">4x</button>
+          <button type="button" data-raise-multiple="5">5x</button>
+        </div>
+        <div id="raiseResult" class="tool-result"></div>
+        <h3 class="subheading">レイズサイズ別 必要勝率表</h3>
+        <div id="raiseOddsTable" class="odds-table"></div>
+        <p class="hint">「3x」は、自分のベット額の3倍までレイズされた意味です。レーキと将来のアクションは含めない、コール時点の純粋なポットオッズです。</p>
+      </section>
+
+      <section id="equityTool" class="panel hidden">
+        <div class="section-head">
+          <div>
+            <h3>ハンド勝率計算</h3>
+            <p class="hint no-margin">ヘッズアップのショーダウン勝率を計算します。</p>
+          </div>
+          <button id="resetEquityBtn" class="ghost compact-button" type="button">リセット</button>
+        </div>
+
+        <div class="equity-group">
+          <strong>自分のハンド</strong>
+          <div class="card-select-row">
+            <select id="heroCard1" class="poker-card-select" aria-label="自分の1枚目"></select>
+            <select id="heroCard2" class="poker-card-select" aria-label="自分の2枚目"></select>
+          </div>
+        </div>
+
+        <div class="equity-group">
+          <div class="section-head">
+            <strong>相手のハンド</strong>
+            <span class="hint no-margin">未選択ならランダム</span>
+          </div>
+          <div class="card-select-row">
+            <select id="villainCard1" class="poker-card-select optional-card" aria-label="相手の1枚目"></select>
+            <select id="villainCard2" class="poker-card-select optional-card" aria-label="相手の2枚目"></select>
+          </div>
+        </div>
+
+        <div class="equity-group">
+          <strong>ボード</strong>
+          <div class="board-card-row">
+            <select id="boardCard1" class="poker-card-select optional-card" aria-label="フロップ1枚目"></select>
+            <select id="boardCard2" class="poker-card-select optional-card" aria-label="フロップ2枚目"></select>
+            <select id="boardCard3" class="poker-card-select optional-card" aria-label="フロップ3枚目"></select>
+            <select id="boardCard4" class="poker-card-select optional-card" aria-label="ターン"></select>
+            <select id="boardCard5" class="poker-card-select optional-card" aria-label="リバー"></select>
+          </div>
+        </div>
+
+        <button id="calculateEquityBtn" class="primary" type="button">勝率を計算</button>
+        <div id="equityResult" class="tool-result">
+          自分の2枚を選び、必要に応じて相手とボードを指定してください。
+        </div>
+        <p class="hint">未知カードが少ない場合は全組み合わせを厳密計算し、それ以外は20,000回のモンテカルロ計算を行います。表示はチョップを半分として加えたエクイティです。</p>
+      </section>
 
       <section id="drawTool" class="panel hidden">
         <h3>アウト数・ドロー勝率</h3>
@@ -332,9 +460,27 @@
             <input id="pnBehind" type="number" inputmode="numeric" min="1" max="9" value="3">
           </label>
         </div>
-        <label>自分のハンド
-          <select id="pnHand"></select>
-        </label>
+        <div class="pn-picker-wrap">
+          <div class="section-head">
+            <strong>自分のハンド</strong>
+            <span id="pnSelectedLabel" class="selected-hand-label">ATo</span>
+          </div>
+          <div class="pn-card-row">
+            <label class="pn-card">
+              <span id="pnCard1Suit" class="pn-suit black-suit">♠</span>
+              <select id="pnCard1Rank" aria-label="1枚目のランク"></select>
+            </label>
+            <label class="pn-card">
+              <span id="pnCard2Suit" class="pn-suit red-suit">♥</span>
+              <select id="pnCard2Rank" aria-label="2枚目のランク"></select>
+            </label>
+          </div>
+          <div class="segmented two pn-suit-toggle">
+            <button class="segment" type="button" data-pn-suited="true">同じスート</button>
+            <button class="segment active" type="button" data-pn-suited="false">別スート</button>
+          </div>
+          <p id="pnPairNote" class="hint hidden">同じ数字のペアなのでスート指定は不要です。</p>
+        </div>
         <div id="pnResult" class="tool-result"></div>
         <div class="range-legend">
           <span><i class="dot pn-high"></i>高い</span>
@@ -459,6 +605,7 @@
           </label>
         </div>
         <p id="lossLimitStatus" class="hint"></p>
+        <p class="app-info-line">アプリバージョン <strong id="settingsVersion">v3.1.0</strong></p>
         <button id="saveSettingsBtn" class="secondary" type="button">設定を保存</button>
       </section>
 
