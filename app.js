@@ -1,11 +1,21 @@
 'use strict';
 
-const APP_VERSION = '3.5.1';
+const APP_VERSION = '3.5.2';
 const APP_CHANGELOG = [
+  {
+    version:'3.5.2',
+    title:'ステークス並び替え',
+    current:true,
+    changes:[
+      '設定画面でリングステークス候補を上下に並び替え可能に変更',
+      '保存した並び順をリング収支入力の選択肢へ反映',
+      '先頭と末尾では移動できないボタンを自動的に無効化'
+    ]
+  },
   {
     version:'3.5.1',
     title:'同額ブラインド対応',
-    current:true,
+    current:false,
     changes:[
       'SBとBBが同額のステークスを登録可能に変更',
       '5／5を初期候補へ追加',
@@ -234,10 +244,15 @@ function renderRingStakeSettings(){
   const stakes=state.settings.ringStakes;
   count.textContent=`${stakes.length}件`;
   list.innerHTML=stakes.length
-    ?stakes.map(value=>`
-      <div class="ring-stake-item">
+    ?stakes.map((value,index)=>`
+      <div class="ring-stake-item" data-ring-stake-item="${esc(value)}">
+        <span class="stake-order-number" aria-label="${index+1}番目">${index+1}</span>
         <span class="stake-blind-label"><small>SB / BB</small><strong>${esc(formatStakeValue(value))}</strong></span>
-        <button class="mini-btn delete" type="button" data-delete-ring-stake="${esc(value)}">削除</button>
+        <div class="stake-item-actions">
+          <button class="stake-move-btn" type="button" data-move-ring-stake="${esc(value)}" data-direction="-1" aria-label="${esc(formatStakeValue(value))}を上へ移動" ${index===0?'disabled':''}>↑</button>
+          <button class="stake-move-btn" type="button" data-move-ring-stake="${esc(value)}" data-direction="1" aria-label="${esc(formatStakeValue(value))}を下へ移動" ${index===stakes.length-1?'disabled':''}>↓</button>
+          <button class="mini-btn delete" type="button" data-delete-ring-stake="${esc(value)}">削除</button>
+        </div>
       </div>
     `).join('')
     :'<p class="empty muted">候補がありません。SBとBBを入力して追加してください。</p>';
@@ -1528,9 +1543,27 @@ document.getElementById('ringStakeForm').addEventListener('submit',event=>{
   showToast(`${formatStakeValue(value)} を追加しました`);
 });
 document.getElementById('ringStakeList').addEventListener('click',event=>{
-  const button=event.target.closest('[data-delete-ring-stake]');
-  if(!button)return;
-  const value=normalizeStakeValue(button.dataset.deleteRingStake);
+  const moveButton=event.target.closest('[data-move-ring-stake]');
+  if(moveButton){
+    const value=normalizeStakeValue(moveButton.dataset.moveRingStake);
+    const direction=Number(moveButton.dataset.direction);
+    const stakes=normalizeRingStakes(state.settings.ringStakes);
+    const currentIndex=stakes.indexOf(value);
+    const nextIndex=currentIndex+direction;
+    if(currentIndex<0||nextIndex<0||nextIndex>=stakes.length)return;
+    [stakes[currentIndex],stakes[nextIndex]]=[stakes[nextIndex],stakes[currentIndex]];
+    state.settings.ringStakes=stakes;
+    saveState();
+    renderRingStakeSettings();
+    const movedItem=document.querySelector(`[data-ring-stake-item="${CSS.escape(value)}"]`);
+    movedItem?.scrollIntoView({block:'nearest',behavior:'smooth'});
+    showToast(`${formatStakeValue(value)} を${direction<0?'上':'下'}へ移動しました`);
+    return;
+  }
+
+  const deleteButton=event.target.closest('[data-delete-ring-stake]');
+  if(!deleteButton)return;
+  const value=normalizeStakeValue(deleteButton.dataset.deleteRingStake);
   state.settings.ringStakes=normalizeRingStakes(state.settings.ringStakes)
     .filter(stake=>stake!==value);
   saveState();

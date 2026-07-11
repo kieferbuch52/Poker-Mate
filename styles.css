@@ -675,3 +675,50 @@ textarea{resize:vertical}
   .ring-stake-list{grid-template-columns:1fr}
   .stake-list-meta{align-items:flex-start;flex-direction:column;gap:3px}
 }
+
+
+/* v3.5.2: reorder ring stakes */
+.ring-stake-item{
+  display:grid;
+  grid-template-columns:26px minmax(0,1fr) auto;
+}
+.stake-order-number{
+  display:grid;
+  place-items:center;
+  width:24px;
+  height:24px;
+  border-radius:50%;
+  color:var(--muted);
+  background:rgba(255,255,255,.05);
+  font-size:.65rem;
+  font-weight:900;
+}
+.stake-item-actions{
+  display:flex;
+  align-items:center;
+  gap:4px;
+}
+.stake-move-btn{
+  display:grid;
+  place-items:center;
+  width:30px;
+  height:30px;
+  border:1px solid var(--line);
+  border-radius:9px;
+  color:var(--accent);
+  background:rgba(75,227,164,.055);
+  font-size:.9rem;
+  font-weight:950;
+}
+.stake-move-btn:active:not(:disabled){
+  transform:scale(.94);
+  background:rgba(75,227,164,.14);
+}
+.stake-move-btn:disabled{
+  opacity:.22;
+  cursor:not-allowed;
+}
+@media(max-width:380px){
+  .ring-stake-item{grid-template-columns:22px minmax(0,1fr)}
+  .stake-item-actions{grid-column:2;justify-content:flex-end}
+}
