@@ -1,11 +1,21 @@
 'use strict';
 
-const APP_VERSION = '3.5.0';
+const APP_VERSION = '3.5.1';
 const APP_CHANGELOG = [
+  {
+    version:'3.5.1',
+    title:'同額ブラインド対応',
+    current:true,
+    changes:[
+      'SBとBBが同額のステークスを登録可能に変更',
+      '5／5を初期候補へ追加',
+      'ステークス入力時のチェックをBB≧SBへ修正'
+    ]
+  },
   {
     version:'3.5.0',
     title:'ステークス設定と折りたたみ',
-    current:true,
+    current:false,
     changes:[
       '設定画面でリングのSB／BB候補を自由に追加・削除可能に変更',
       'リング収支入力では設定済みの組み合わせから選択',
@@ -91,7 +101,7 @@ const STORAGE_KEY = 'pokerMateDataV1';
 const ranks = ['A','K','Q','J','T','9','8','7','6','5','4','3','2'];
 const cardSuits = [{key:'s',symbol:'♠'},{key:'h',symbol:'♥'},{key:'d',symbol:'♦'},{key:'c',symbol:'♣'}];
 const DEFAULT_RING_STAKES = [
-  '0.5/1','1/2','1/3','2/5','5/10','10/20','10/25','20/40','25/50',
+  '0.5/1','1/2','1/3','2/5','5/5','5/10','10/20','10/25','20/40','25/50',
   '50/100','100/200','200/400','250/500','500/1000','1000/2000',
   '2000/5000','5000/10000','10000/20000'
 ];
@@ -1500,8 +1510,8 @@ document.getElementById('ringStakeForm').addEventListener('submit',event=>{
     alert('SBとBBには0より大きい値を設定してください。');
     return;
   }
-  if(bb<=sb){
-    alert('BBはSBより大きい値にしてください。');
+  if(bb<sb){
+    alert('BBはSB以上の値にしてください。');
     return;
   }
   const value=normalizeStakeValue(`${sb}/${bb}`);

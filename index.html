@@ -11,7 +11,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./styles.css?v=3.5.0">
+  <link rel="stylesheet" href="./styles.css?v=3.5.1">
 </head>
 <body>
   <header class="topbar">
@@ -20,7 +20,7 @@
       <h1>Poker Mate</h1>
     </div>
     <div class="top-actions">
-      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v3.5.0</button>
+      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v3.5.1</button>
       <button id="installBtn" class="ghost hidden">ホーム画面に追加</button>
     </div>
   </header>
@@ -621,7 +621,7 @@
         <div class="section-head stake-settings-head">
           <div>
             <h3>リングステークス候補</h3>
-            <p class="hint no-margin">ここで登録したSB／BBの組み合わせが、リング収支入力の選択肢になります。</p>
+            <p class="hint no-margin">ここで登録したSB／BBの組み合わせが、リング収支入力の選択肢になります。5／5のようにSB＝BBでも登録できます。</p>
           </div>
           <button id="restoreRingStakesBtn" class="ghost compact-button" type="button">初期候補</button>
         </div>
@@ -641,7 +641,7 @@
         </div>
         <div id="ringStakeList" class="ring-stake-list"></div>
 
-        <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal"><span>アプリバージョン</span><strong id="settingsVersion">v3.5.0 <span aria-hidden="true">›</span></strong></button>
+        <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal"><span>アプリバージョン</span><strong id="settingsVersion">v3.5.1 <span aria-hidden="true">›</span></strong></button>
         <button id="saveSettingsBtn" class="secondary" type="button">設定を保存</button>
       </section>
 
@@ -682,7 +682,7 @@
     <div class="current-version-card">
       <div>
         <span class="current-version-label">現在のバージョン</span>
-        <strong id="currentVersionInModal">v3.5.0</strong>
+        <strong id="currentVersionInModal">v3.5.1</strong>
       </div>
       <span class="up-to-date-badge">最新版</span>
     </div>
@@ -759,6 +759,6 @@
   </nav>
 
   <div id="toast" class="toast" role="status"></div>
-  <script src="./app.js?v=3.5.0"></script>
+  <script src="./app.js?v=3.5.1"></script>
 </body>
 </html>
