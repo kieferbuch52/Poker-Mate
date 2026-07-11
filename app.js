@@ -1,11 +1,33 @@
 'use strict';
 
-const APP_VERSION = '3.3.0';
+const APP_VERSION = '3.5.0';
 const APP_CHANGELOG = [
+  {
+    version:'3.5.0',
+    title:'ステークス設定と折りたたみ',
+    current:true,
+    changes:[
+      '設定画面でリングのSB／BB候補を自由に追加・削除可能に変更',
+      'リング収支入力では設定済みの組み合わせから選択',
+      '各画面の入力パネルに開閉ボタンを追加',
+      '入力パネルの開閉状態を端末に保存'
+    ]
+  },
+  {
+    version:'3.4.0',
+    title:'入力操作とレンジ表示改善',
+    current:false,
+    changes:[
+      '169ハンドのレンジ表を横スクロールなしで画面内に表示',
+      'すべての数値欄をタップ式の数値入力パネルへ変更',
+      '用途別の候補値、増減ボタン、テンキーを追加',
+      'リングのステークスをSB／BBの選択式へ変更'
+    ]
+  },
   {
     version:'3.3.0',
     title:'バージョン履歴',
-    current:true,
+    current:false,
     changes:[
       'バージョン表示をタップできるボタンへ変更',
       'これまでのアップデート内容を確認できる履歴ウィンドウを追加',
@@ -68,6 +90,12 @@ const APP_CHANGELOG = [
 const STORAGE_KEY = 'pokerMateDataV1';
 const ranks = ['A','K','Q','J','T','9','8','7','6','5','4','3','2'];
 const cardSuits = [{key:'s',symbol:'♠'},{key:'h',symbol:'♥'},{key:'d',symbol:'♦'},{key:'c',symbol:'♣'}];
+const DEFAULT_RING_STAKES = [
+  '0.5/1','1/2','1/3','2/5','5/10','10/20','10/25','20/40','25/50',
+  '50/100','100/200','200/400','250/500','500/1000','1000/2000',
+  '2000/5000','5000/10000','10000/20000'
+];
+const COLLAPSE_STORAGE_KEY = 'pokerMateCollapseV1';
 
 const powerMatrix = [
   [80,80,80,80,80,50,37,32,28,31,27,26,24],
@@ -127,10 +155,89 @@ let equityCards = {hero:[null,null],villain:[null,null],board:[null,null,null,nu
 let activeCardTarget = null;
 let deferredInstallPrompt = null;
 
+
+function cleanStakeNumber(value){
+  const n=Number(String(value).replace(/,/g,'').trim());
+  if(!Number.isFinite(n)||n<=0)return '';
+  return String(Number(n.toFixed(4)));
+}
+function normalizeStakeValue(value){
+  const raw=String(value??'').replace(/\s/g,'').replace(/,/g,'');
+  const parts=raw.split('/');
+  if(parts.length!==2)return '';
+  const sb=cleanStakeNumber(parts[0]);
+  const bb=cleanStakeNumber(parts[1]);
+  if(!sb||!bb)return '';
+  return `${sb}/${bb}`;
+}
+function normalizeRingStakes(values){
+  const seen=new Set();
+  return (Array.isArray(values)?values:[])
+    .map(normalizeStakeValue)
+    .filter(value=>value&&!seen.has(value)&&seen.add(value));
+}
+function formatStakeNumber(value){
+  const n=Number(value);
+  return Number.isFinite(n)
+    ?n.toLocaleString('ja-JP',{maximumFractionDigits:4})
+    :String(value);
+}
+function formatStakeValue(value){
+  const normalized=normalizeStakeValue(value);
+  if(!normalized)return String(value||'');
+  const [sb,bb]=normalized.split('/');
+  return `${formatStakeNumber(sb)} / ${formatStakeNumber(bb)}`;
+}
+function renderRingStakeOptions(preferredValue){
+  const select=document.getElementById('cashStakes');
+  if(!select)return;
+  const current=normalizeStakeValue(preferredValue??select.value);
+  const configured=normalizeRingStakes(state.settings.ringStakes);
+  const configuredSet=new Set(configured);
+  const legacy=normalizeRingStakes(
+    state.sessions
+      .filter(session=>session.type==='cash'&&session.stakes)
+      .map(session=>session.stakes)
+  ).filter(value=>!configuredSet.has(value));
+
+  let html='<option value="">設定済みステークスを選択</option>';
+  if(configured.length){
+    html+='<optgroup label="設定済み">';
+    html+=configured.map(value=>`<option value="${esc(value)}">${esc(formatStakeValue(value))}</option>`).join('');
+    html+='</optgroup>';
+  }
+  if(legacy.length){
+    html+='<optgroup label="過去の入力">';
+    html+=legacy.map(value=>`<option value="${esc(value)}">${esc(formatStakeValue(value))}</option>`).join('');
+    html+='</optgroup>';
+  }
+  select.innerHTML=html;
+  if(current&&[...select.options].some(option=>option.value===current)){
+    select.value=current;
+  }
+}
+function renderRingStakeSettings(){
+  state.settings.ringStakes=normalizeRingStakes(state.settings.ringStakes);
+  const list=document.getElementById('ringStakeList');
+  const count=document.getElementById('ringStakeCount');
+  if(!list||!count)return;
+  const stakes=state.settings.ringStakes;
+  count.textContent=`${stakes.length}件`;
+  list.innerHTML=stakes.length
+    ?stakes.map(value=>`
+      <div class="ring-stake-item">
+        <span class="stake-blind-label"><small>SB / BB</small><strong>${esc(formatStakeValue(value))}</strong></span>
+        <button class="mini-btn delete" type="button" data-delete-ring-stake="${esc(value)}">削除</button>
+      </div>
+    `).join('')
+    :'<p class="empty muted">候補がありません。SBとBBを入力して追加してください。</p>';
+  renderRingStakeOptions();
+}
+
 function initialState(){
   return {
     version:1,
-    settings:{baseCurrency:'JPY',lossLimit:0},
+    settings:{baseCurrency:'JPY',lossLimit:0,ringStakes:[...DEFAULT_RING_STAKES]},
     bankroll:{startingAmount:0,cashBuyIn:0,tournamentBuyIn:0,cashTargetBuyIns:30,tournamentTargetBuyIns:100,transactions:[]},
     venues:[],
     chipTransactions:[],
@@ -145,7 +252,15 @@ function normalizeState(raw){
   return {
     ...base,
     ...source,
-    settings:{...base.settings,...(source.settings||{})},
+    settings:{
+      ...base.settings,
+      ...(source.settings||{}),
+      ringStakes:normalizeRingStakes(
+        Array.isArray(source.settings?.ringStakes)
+          ? source.settings.ringStakes
+          : base.settings.ringStakes
+      )
+    },
     bankroll:{
       ...base.bankroll,
       ...(source.bankroll||{}),
@@ -307,8 +422,12 @@ function updateSessionPreview(){
 }
 ['cashBuyIn','cashOut','sessionExpenses','tournamentBuyIn','tournamentReentry','tournamentPrize','sessionFx'].forEach(id=>document.getElementById(id).addEventListener('input',updateSessionPreview));
 
+function ensureCashStakeOption(value){
+  renderRingStakeOptions(value);
+}
 function resetSessionForm(){
   document.getElementById('sessionForm').reset();
+  renderRingStakeOptions('');
   document.getElementById('sessionId').value='';
   document.getElementById('sessionDate').value=today();
   document.getElementById('sessionExpenses').value=0;
@@ -367,6 +486,7 @@ function sessionCardHtml(s){
 }
 function renderSessions(){
   renderVenueOptions();
+  renderRingStakeOptions(document.getElementById('cashStakes').value);
   const filter=document.getElementById('sessionListFilter').value;
   const list=[...state.sessions].filter(s=>filter==='all'||s.type===filter).sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt-a.createdAt);
   document.getElementById('sessionList').innerHTML=list.length?list.map(sessionCardHtml).join(''):'<p class="empty muted">まだ記録がありません。</p>';
@@ -379,12 +499,14 @@ document.getElementById('sessionList').addEventListener('click',e=>{
 });
 function editSession(id){
   const s=state.sessions.find(x=>x.id===id);if(!s)return;
+  openCollapsible('session-input');
   setSessionType(s.type);
   document.getElementById('sessionId').value=s.id;document.getElementById('sessionDate').value=s.date;
   document.getElementById('sessionVenue').value=s.venueId||'';document.getElementById('sessionFx').value=s.fxRate||1;
   document.getElementById('sessionExpenses').value=s.expenses||0;document.getElementById('sessionNotes').value=s.notes||'';
   document.getElementById('reflectChips').checked=!!s.reflected;
   if(s.type==='cash'){
+    ensureCashStakeOption(s.stakes||'');
     document.getElementById('cashStakes').value=s.stakes||'';document.getElementById('cashHours').value=s.hours||'';
     document.getElementById('cashBuyIn').value=s.buyIn||0;document.getElementById('cashOut').value=s.cashOut||0;
   }else{
@@ -560,6 +682,7 @@ document.getElementById('venueList').addEventListener('click',e=>{
   const edit=e.target.closest('[data-edit-venue]'),del=e.target.closest('[data-delete-venue]');
   if(edit){
     const v=venueById(edit.dataset.editVenue);if(!v)return;
+    openCollapsible('venue-input');
     document.getElementById('venueId').value=v.id;document.getElementById('venueName').value=v.name;document.getElementById('venueCurrency').value=v.currency;
     document.getElementById('venueBalance').value=v.chipBalance;document.getElementById('venueFx').value=v.fxRate;document.getElementById('venueNotes').value=v.notes||'';
     window.scrollTo({top:0,behavior:'smooth'});
@@ -1044,6 +1167,274 @@ document.getElementById('bankrollTransactionList').addEventListener('click',e=>{
 });
 
 
+
+let activeNumberInput=null;
+let numberDraft='0';
+let numberPickerConfig=null;
+
+const NUMBER_INPUT_CONFIGS = {
+  cashHours:{step:.25,presets:[1,2,3,4,6,8],suffix:'時間'},
+  tournamentHours:{step:.25,presets:[1,2,3,4,6,8],suffix:'時間'},
+  tournamentField:{step:1,presets:[6,9,18,27,45,90],suffix:'人'},
+  tournamentPlace:{step:1,presets:[1,2,3,4,5,9],suffix:'位'},
+  drawOuts:{step:1,presets:[4,6,8,9,12,15],suffix:'アウト'},
+  pnBehind:{step:1,presets:[1,2,3,4,5,6],suffix:'人'},
+  bankrollCashTarget:{step:1,presets:[20,30,40,50,100],suffix:'BI'},
+  bankrollTournamentTarget:{step:1,presets:[50,100,150,200,300],suffix:'回'},
+  sessionFx:{step:.01,presets:[.1,.5,1,2,5,10]},
+  venueFx:{step:.01,presets:[.1,.5,1,2,5,10]},
+  oddsPot:{step:10,presets:[25,50,100,200,500]},
+  oddsBet:{step:10,presets:[25,50,100,200,500]},
+  oddsCall:{step:10,presets:[25,50,100,200,500]},
+  raisePot:{step:10,presets:[25,50,100,200,500]},
+  raiseOwnBet:{step:10,presets:[25,50,100,200,500]},
+  raiseTo:{step:10,presets:[50,100,150,200,300,500]},
+  pnStack:{step:1000,presets:[5000,10000,20000,30000,50000,100000]},
+  pnSb:{step:100,presets:[25,50,100,200,500,1000]},
+  pnBb:{step:100,presets:[50,100,200,400,1000,2000]},
+  pnAnteTotal:{step:100,presets:[0,100,200,500,1000,2000]},
+  ringStakeSb:{step:.5,presets:[.5,1,2,5,10,25,50,100,500,1000]},
+  ringStakeBb:{step:.5,presets:[1,2,3,5,10,20,25,50,100,200,1000,2000]}
+};
+
+const MONEY_NUMBER_IDS = new Set([
+  'cashBuyIn','cashOut','tournamentBuyIn','tournamentReentry','tournamentPrize',
+  'sessionExpenses','venueBalance','chipTransactionAmount','bankrollStarting',
+  'bankrollCashBuyIn','bankrollTournamentBuyIn','bankrollTransactionAmount','lossLimit'
+]);
+
+function decimalsFromStep(step){
+  const text=String(step);
+  return text.includes('.')?text.split('.')[1].length:0;
+}
+function smartNumberConfig(input){
+  const configured=NUMBER_INPUT_CONFIGS[input.id]||{};
+  let step=configured.step;
+  let presets=configured.presets;
+  if(step===undefined){
+    step=MONEY_NUMBER_IDS.has(input.id)?100:num(input.step)||1;
+  }
+  if(!presets&&MONEY_NUMBER_IDS.has(input.id)){
+    presets=[100,500,1000,5000,10000];
+  }
+  const sourceStep=num(input.step)||step;
+  const decimals=Math.max(decimalsFromStep(sourceStep),decimalsFromStep(step));
+  return {
+    step,
+    presets:presets||[],
+    suffix:configured.suffix||'',
+    decimals,
+    min:input.min===''||input.min===undefined?-Infinity:num(input.min),
+    max:input.max===''||input.max===undefined?Infinity:num(input.max)
+  };
+}
+function numberInputLabel(input){
+  const label=input.closest('label');
+  if(input.getAttribute('aria-label'))return input.getAttribute('aria-label');
+  if(!label)return '数値を入力';
+  const clone=label.cloneNode(true);
+  clone.querySelectorAll('input,select,textarea,small,button').forEach(el=>el.remove());
+  return clone.textContent.replace(/\s+/g,' ').trim()||'数値を入力';
+}
+function stripNumberZeros(value,decimals=4){
+  if(!Number.isFinite(value))return '0';
+  const fixed=value.toFixed(decimals);
+  return fixed.replace(/\.?0+$/,'');
+}
+function clampNumber(value,config){
+  return Math.min(config.max,Math.max(config.min,value));
+}
+function formattedNumberDraft(){
+  const value=num(numberDraft);
+  const maximum=numberPickerConfig?.decimals??2;
+  return value.toLocaleString('ja-JP',{maximumFractionDigits:maximum});
+}
+function renderNumberPicker(){
+  if(!activeNumberInput||!numberPickerConfig)return;
+  document.getElementById('numberPickerValue').textContent=
+    `${formattedNumberDraft()}${numberPickerConfig.suffix?` ${numberPickerConfig.suffix}`:''}`;
+  document.getElementById('numberStepLabel').textContent=`±${numberPickerConfig.step}`;
+  document.getElementById('numberDecimalBtn').disabled=numberPickerConfig.decimals===0;
+  const presets=document.getElementById('numberPickerPresets');
+  presets.innerHTML=numberPickerConfig.presets.map(value=>
+    `<button type="button" data-number-preset="${value}">${Number(value).toLocaleString('ja-JP')}</button>`
+  ).join('');
+}
+function openNumberPicker(input){
+  activeNumberInput=input;
+  numberPickerConfig=smartNumberConfig(input);
+  numberDraft=input.value===''?'0':String(input.value).replace(/,/g,'');
+  document.getElementById('numberPickerTitle').textContent=numberInputLabel(input);
+  document.getElementById('numberPickerCaption').textContent='タップして入力・候補から選択';
+  renderNumberPicker();
+  document.getElementById('numberPickerBackdrop').classList.remove('hidden');
+  document.getElementById('numberPickerSheet').classList.remove('hidden');
+  document.body.classList.add('modal-open');
+}
+function closeNumberPicker(){
+  document.getElementById('numberPickerBackdrop').classList.add('hidden');
+  document.getElementById('numberPickerSheet').classList.add('hidden');
+  document.body.classList.remove('modal-open');
+  activeNumberInput=null;
+  numberPickerConfig=null;
+}
+function setNumberDraft(value){
+  const clamped=clampNumber(num(value),numberPickerConfig);
+  numberDraft=stripNumberZeros(clamped,numberPickerConfig.decimals);
+  renderNumberPicker();
+}
+function adjustNumberDraft(direction){
+  setNumberDraft(num(numberDraft)+numberPickerConfig.step*direction);
+}
+function applyNumberKey(key){
+  if(key==='backspace'){
+    numberDraft=numberDraft.length>1?numberDraft.slice(0,-1):'0';
+  }else if(key==='.'){
+    if(numberPickerConfig.decimals>0&&!numberDraft.includes('.'))numberDraft+=numberDraft?' .'.trim(): '0.';
+  }else{
+    if(numberDraft==='0')numberDraft=key;
+    else{
+      const decimalPart=numberDraft.split('.')[1]||'';
+      if(numberDraft.includes('.')&&decimalPart.length>=numberPickerConfig.decimals)return;
+      numberDraft+=key;
+    }
+  }
+  renderNumberPicker();
+}
+function commitNumberPicker(){
+  if(!activeNumberInput)return;
+  const value=clampNumber(num(numberDraft),numberPickerConfig);
+  activeNumberInput.value=stripNumberZeros(value,numberPickerConfig.decimals);
+  activeNumberInput.dispatchEvent(new Event('input',{bubbles:true}));
+  activeNumberInput.dispatchEvent(new Event('change',{bubbles:true}));
+  closeNumberPicker();
+}
+function initializeSmartNumberInputs(){
+  document.querySelectorAll('input[type="number"]').forEach(input=>{
+    input.readOnly=true;
+    input.inputMode='none';
+    input.classList.add('smart-number-input');
+    input.title='タップして数値を入力';
+    input.setAttribute('aria-haspopup','dialog');
+    input.setAttribute('aria-controls','numberPickerSheet');
+  });
+}
+document.addEventListener('click',event=>{
+  const input=event.target.closest('input.smart-number-input');
+  if(input&&!input.disabled){
+    event.preventDefault();
+    openNumberPicker(input);
+  }
+  const preset=event.target.closest('[data-number-preset]');
+  if(preset&&numberPickerConfig)setNumberDraft(num(preset.dataset.numberPreset));
+  const key=event.target.closest('[data-number-key]');
+  if(key&&numberPickerConfig)applyNumberKey(key.dataset.numberKey);
+});
+document.getElementById('numberMinusBtn').addEventListener('click',()=>adjustNumberDraft(-1));
+document.getElementById('numberPlusBtn').addEventListener('click',()=>adjustNumberDraft(1));
+document.getElementById('clearNumberPickerBtn').addEventListener('click',()=>setNumberDraft(0));
+document.getElementById('confirmNumberPickerBtn').addEventListener('click',commitNumberPicker);
+document.getElementById('closeNumberPickerBtn').addEventListener('click',closeNumberPicker);
+document.getElementById('numberPickerBackdrop').addEventListener('click',closeNumberPicker);
+document.addEventListener('keydown',event=>{
+  if(document.getElementById('numberPickerSheet').classList.contains('hidden'))return;
+  if(event.key==='Escape')closeNumberPicker();
+  if(/^\d$/.test(event.key))applyNumberKey(event.key);
+  if(event.key==='Backspace')applyNumberKey('backspace');
+  if(event.key==='Enter')commitNumberPicker();
+});
+
+
+function loadCollapsePreferences(){
+  try{
+    const parsed=JSON.parse(localStorage.getItem(COLLAPSE_STORAGE_KEY));
+    return parsed&&typeof parsed==='object'?parsed:{};
+  }catch(error){
+    return {};
+  }
+}
+function saveCollapsePreference(key,isOpen){
+  const prefs=loadCollapsePreferences();
+  prefs[key]=Boolean(isOpen);
+  try{localStorage.setItem(COLLAPSE_STORAGE_KEY,JSON.stringify(prefs));}catch(error){}
+}
+function setCollapsibleOpen(key,isOpen,save=true){
+  const target=document.querySelector(`[data-collapse-key="${key}"]`);
+  if(!target)return;
+  const button=target.querySelector(':scope > .collapsible-toggle');
+  target.classList.toggle('is-collapsed',!isOpen);
+  if(button){
+    button.setAttribute('aria-expanded',String(isOpen));
+    const status=button.querySelector('.collapsible-status');
+    if(status)status.textContent=isOpen?'閉じる':'開く';
+    const chevron=button.querySelector('.collapsible-chevron');
+    if(chevron)chevron.textContent=isOpen?'⌃':'⌄';
+  }
+  if(save)saveCollapsePreference(key,isOpen);
+}
+function openCollapsible(key){
+  setCollapsibleOpen(key,true);
+}
+function initializeCollapsibleSections(){
+  const configs=[
+    {selector:'#sessionForm',key:'session-input',label:'セッション入力',formLike:true},
+    {selector:'#venueForm',key:'venue-input',label:'店舗情報入力',formLike:true},
+    {selector:'#chipTransactionForm',key:'chip-input',label:'チップ購入・換金入力',formLike:true},
+    {selector:'#oddsTool',key:'odds-input',label:'ベット対応ツール',removeHeading:true},
+    {selector:'#raiseTool',key:'raise-input',label:'対レイズツール',removeHeading:true},
+    {selector:'#equityTool',key:'equity-input',label:'勝率計算ツール'},
+    {selector:'#drawTool',key:'draw-input',label:'アウト・ドロー計算',removeHeading:true},
+    {selector:'#powerTool',key:'power-input',label:'パワーナンバーツール',removeHeading:true},
+    {selector:'#handForm',key:'hand-input',label:'ハンドメモ入力',formLike:true},
+    {selector:'#bankrollSettingsInput',key:'bankroll-settings',label:'バンクロール基準値',formLike:true,removeHeading:true},
+    {selector:'#bankrollTransactionForm',key:'bankroll-transaction',label:'バンクロール入出金',formLike:true},
+    {selector:'#settingsPanel',key:'app-settings',label:'アプリ設定',formLike:true,removeHeading:true}
+  ];
+  const prefs=loadCollapsePreferences();
+  configs.forEach(config=>{
+    const target=document.querySelector(config.selector);
+    if(!target||target.dataset.collapseReady==='true')return;
+    target.dataset.collapseReady='true';
+    target.dataset.collapseKey=config.key;
+    target.classList.add('collapsible-container');
+    if(target.classList.contains('form-panel'))target.classList.remove('form-panel');
+
+    const body=document.createElement('div');
+    body.className='collapsible-body';
+    if(config.formLike)body.classList.add('form-panel');
+    while(target.firstChild)body.appendChild(target.firstChild);
+
+    if(config.removeHeading){
+      const heading=[...body.children].find(child=>child.tagName==='H3');
+      if(heading)heading.remove();
+    }
+
+    const button=document.createElement('button');
+    button.type='button';
+    button.className='collapsible-toggle';
+    button.setAttribute('aria-expanded','true');
+    button.innerHTML=`
+      <span class="collapsible-title">
+        <span class="collapsible-kicker">INPUT</span>
+        <strong>${esc(config.label)}</strong>
+      </span>
+      <span class="collapsible-control">
+        <span class="collapsible-status">閉じる</span>
+        <span class="collapsible-chevron" aria-hidden="true">⌃</span>
+      </span>`;
+    button.addEventListener('click',()=>{
+      const isOpen=button.getAttribute('aria-expanded')==='true';
+      setCollapsibleOpen(config.key,!isOpen);
+    });
+
+    target.append(button,body);
+    const initialOpen=Object.prototype.hasOwnProperty.call(prefs,config.key)
+      ?Boolean(prefs[config.key])
+      :true;
+    setCollapsibleOpen(config.key,initialOpen,false);
+  });
+}
+
 function renderVersionHistory(){
   const list=document.getElementById('versionHistoryList');
   document.getElementById('currentVersionInModal').textContent=`v${APP_VERSION}`;
@@ -1092,12 +1483,58 @@ function renderSettings(){
   document.getElementById('appVersion').textContent=`v${APP_VERSION}`;
   document.getElementById('settingsVersion').innerHTML=`v${APP_VERSION} <span aria-hidden="true">›</span>`;
   document.getElementById('baseCurrency').value=state.settings.baseCurrency||'JPY';
-  document.getElementById('lossLimit').value=state.settings.lossLimit||0;updateLossLimitStatus();
+  document.getElementById('lossLimit').value=state.settings.lossLimit||0;
+  renderRingStakeSettings();
+  updateLossLimitStatus();
 }
 document.getElementById('saveSettingsBtn').addEventListener('click',()=>{
   state.settings.baseCurrency=(document.getElementById('baseCurrency').value.trim()||'JPY').toUpperCase();
   state.settings.lossLimit=num(document.getElementById('lossLimit').value);saveState();renderSettings();showToast('設定を保存しました');
 });
+
+document.getElementById('ringStakeForm').addEventListener('submit',event=>{
+  event.preventDefault();
+  const sb=num(document.getElementById('ringStakeSb').value);
+  const bb=num(document.getElementById('ringStakeBb').value);
+  if(sb<=0||bb<=0){
+    alert('SBとBBには0より大きい値を設定してください。');
+    return;
+  }
+  if(bb<=sb){
+    alert('BBはSBより大きい値にしてください。');
+    return;
+  }
+  const value=normalizeStakeValue(`${sb}/${bb}`);
+  const stakes=normalizeRingStakes(state.settings.ringStakes);
+  if(stakes.includes(value)){
+    showToast('同じステークスは登録済みです');
+    return;
+  }
+  state.settings.ringStakes=[...stakes,value];
+  saveState();
+  renderRingStakeSettings();
+  document.getElementById('ringStakeSb').value=bb;
+  document.getElementById('ringStakeBb').value=bb*2;
+  showToast(`${formatStakeValue(value)} を追加しました`);
+});
+document.getElementById('ringStakeList').addEventListener('click',event=>{
+  const button=event.target.closest('[data-delete-ring-stake]');
+  if(!button)return;
+  const value=normalizeStakeValue(button.dataset.deleteRingStake);
+  state.settings.ringStakes=normalizeRingStakes(state.settings.ringStakes)
+    .filter(stake=>stake!==value);
+  saveState();
+  renderRingStakeSettings();
+  showToast(`${formatStakeValue(value)} を削除しました`);
+});
+document.getElementById('restoreRingStakesBtn').addEventListener('click',()=>{
+  if(!confirm('リングステークス候補を初期状態に戻しますか？'))return;
+  state.settings.ringStakes=[...DEFAULT_RING_STAKES];
+  saveState();
+  renderRingStakeSettings();
+  showToast('初期候補に戻しました');
+});
+
 function updateLossLimitStatus(){
   const limit=num(state.settings.lossLimit),todayProfit=state.sessions.filter(s=>s.date===today()).reduce((a,s)=>a+sessionProfitBase(s),0);
   const el=document.getElementById('lossLimitStatus');if(!el)return;
@@ -1149,4 +1586,4 @@ function renderAll(){
   renderHome();renderSessions();renderVenues();renderRangeGrid();renderOdds();renderRaiseOdds();renderDraw();renderPower();renderHands();renderBankroll();renderSettings();
 }
 document.getElementById('sessionDate').value=today();document.getElementById('handDate').value=today();document.getElementById('bankrollTransactionDate').value=today();document.getElementById('chipTransactionDate').value=today();
-buildPnHandPicker();resetSessionForm();renderAll();renderVisualCards();
+buildPnHandPicker();initializeSmartNumberInputs();initializeCollapsibleSections();resetSessionForm();renderAll();renderVisualCards();

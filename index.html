@@ -11,7 +11,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./styles.css?v=3.3.0">
+  <link rel="stylesheet" href="./styles.css?v=3.5.0">
 </head>
 <body>
   <header class="topbar">
@@ -20,7 +20,7 @@
       <h1>Poker Mate</h1>
     </div>
     <div class="top-actions">
-      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v3.3.0</button>
+      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v3.5.0</button>
       <button id="installBtn" class="ghost hidden">ホーム画面に追加</button>
     </div>
   </header>
@@ -92,8 +92,11 @@
 
         <div id="cashFields">
           <div class="grid two">
-            <label>ステークス
-              <input id="cashStakes" type="text" placeholder="例：25/50、1/2">
+            <label>ステークス（SB / BB）
+              <select id="cashStakes" required>
+                <option value="">設定済みステークスを選択</option>
+              </select>
+              <small class="hint">候補は「その他 → 設定」で追加・削除できます。</small>
             </label>
             <label>プレー時間
               <input id="cashHours" type="number" inputmode="decimal" min="0" step="0.25" placeholder="例：4.5">
@@ -280,7 +283,7 @@
           <button class="segment" data-position="SB">SB</button>
         </div>
         <div id="rangeLegend" class="range-legend"></div>
-        <div id="rangeGrid" class="hand-grid" aria-label="ハンドレンジ表"></div>
+        <div id="rangeGrid" class="hand-grid range-fit-grid" aria-label="ハンドレンジ表"></div>
         <p id="rangeHint" class="hint"></p>
       </section>
     </section>
@@ -493,7 +496,7 @@
           <span><i class="dot pn-mid"></i>中間</span>
           <span><i class="dot pn-low"></i>低い</span>
         </div>
-        <div id="pnGrid" class="hand-grid power-grid" aria-label="パワーナンバー表"></div>
+        <div id="pnGrid" class="hand-grid power-grid range-fit-grid" aria-label="パワーナンバー表"></div>
         <p class="hint">目安：必要PN＝M値×後ろの人数、M値＝スタック÷（SB＋BB＋アンティ合計）。先に誰も参加していない場面向けの簡易判断です。バブル・ファイナル・サテライトなどICMが強い局面では、そのまま使わないでください。</p>
       </section>
     </section>
@@ -550,9 +553,10 @@
         <div id="bankrollStats" class="bankroll-stats"></div>
 
         <div class="divider"></div>
-        <h3>基準値</h3>
-        <div class="grid two">
-          <label>開始時のポーカー資金
+        <div id="bankrollSettingsInput" class="input-subsection">
+          <h3>基準値</h3>
+          <div class="grid two">
+            <label>開始時のポーカー資金
             <input id="bankrollStarting" type="number" inputmode="decimal" min="0" step="0.01" value="0">
           </label>
           <label>リング1回の想定バイイン
@@ -570,7 +574,8 @@
         <label>MTT目標エントリー数
           <input id="bankrollTournamentTarget" type="number" inputmode="numeric" min="1" step="1" value="100">
         </label>
-        <button id="saveBankrollSettingsBtn" class="secondary" type="button">基準値を保存</button>
+          <button id="saveBankrollSettingsBtn" class="secondary" type="button">基準値を保存</button>
+        </div>
 
         <div class="divider"></div>
         <h3>入金・出金</h3>
@@ -600,7 +605,7 @@
         <p class="hint">現在資金は「開始資金＋登録済みセッションの基準通貨収支＋入金－出金」で計算します。チップ残高とは別管理です。</p>
       </section>
 
-      <section class="panel">
+      <section id="settingsPanel" class="panel">
         <h3>設定</h3>
         <div class="grid two">
           <label>基準通貨
@@ -611,7 +616,32 @@
           </label>
         </div>
         <p id="lossLimitStatus" class="hint"></p>
-        <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal"><span>アプリバージョン</span><strong id="settingsVersion">v3.3.0 <span aria-hidden="true">›</span></strong></button>
+
+        <div class="divider"></div>
+        <div class="section-head stake-settings-head">
+          <div>
+            <h3>リングステークス候補</h3>
+            <p class="hint no-margin">ここで登録したSB／BBの組み合わせが、リング収支入力の選択肢になります。</p>
+          </div>
+          <button id="restoreRingStakesBtn" class="ghost compact-button" type="button">初期候補</button>
+        </div>
+        <form id="ringStakeForm" class="stake-add-form">
+          <label>SB
+            <input id="ringStakeSb" type="number" inputmode="decimal" min="0.01" step="0.5" value="25" required>
+          </label>
+          <span class="stake-separator" aria-hidden="true">／</span>
+          <label>BB
+            <input id="ringStakeBb" type="number" inputmode="decimal" min="0.01" step="0.5" value="50" required>
+          </label>
+          <button class="secondary" type="submit">組み合わせを追加</button>
+        </form>
+        <div class="stake-list-meta">
+          <span id="ringStakeCount">0件</span>
+          <span>削除しても過去の収支記録は残ります</span>
+        </div>
+        <div id="ringStakeList" class="ring-stake-list"></div>
+
+        <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal"><span>アプリバージョン</span><strong id="settingsVersion">v3.5.0 <span aria-hidden="true">›</span></strong></button>
         <button id="saveSettingsBtn" class="secondary" type="button">設定を保存</button>
       </section>
 
@@ -652,11 +682,56 @@
     <div class="current-version-card">
       <div>
         <span class="current-version-label">現在のバージョン</span>
-        <strong id="currentVersionInModal">v3.3.0</strong>
+        <strong id="currentVersionInModal">v3.5.0</strong>
       </div>
       <span class="up-to-date-badge">最新版</span>
     </div>
     <div id="versionHistoryList" class="version-history-list"></div>
+  </section>
+
+
+  <div id="numberPickerBackdrop" class="number-picker-backdrop hidden"></div>
+  <section id="numberPickerSheet" class="number-picker-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="numberPickerTitle">
+    <div class="number-picker-head">
+      <div>
+        <p class="eyebrow">QUICK NUMBER INPUT</p>
+        <h3 id="numberPickerTitle">数値を入力</h3>
+      </div>
+      <button id="closeNumberPickerBtn" class="ghost compact-button" type="button">キャンセル</button>
+    </div>
+
+    <div class="number-picker-display">
+      <span id="numberPickerCaption">入力値</span>
+      <strong id="numberPickerValue">0</strong>
+    </div>
+
+    <div id="numberPickerPresets" class="number-picker-presets"></div>
+
+    <div class="number-adjust-row">
+      <button id="numberMinusBtn" type="button" aria-label="値を減らす">−</button>
+      <span id="numberStepLabel">±1</span>
+      <button id="numberPlusBtn" type="button" aria-label="値を増やす">＋</button>
+    </div>
+
+    <div class="number-keypad" aria-label="数値テンキー">
+      <button type="button" data-number-key="1">1</button>
+      <button type="button" data-number-key="2">2</button>
+      <button type="button" data-number-key="3">3</button>
+      <button type="button" data-number-key="4">4</button>
+      <button type="button" data-number-key="5">5</button>
+      <button type="button" data-number-key="6">6</button>
+      <button type="button" data-number-key="7">7</button>
+      <button type="button" data-number-key="8">8</button>
+      <button type="button" data-number-key="9">9</button>
+      <button id="numberDecimalBtn" type="button" data-number-key=".">.</button>
+      <button type="button" data-number-key="0">0</button>
+      <button type="button" data-number-key="backspace" aria-label="1文字削除">⌫</button>
+    </div>
+
+    <div class="number-picker-actions">
+      <button id="clearNumberPickerBtn" class="ghost" type="button">0にする</button>
+      <button id="confirmNumberPickerBtn" class="primary" type="button">この数値に決定</button>
+    </div>
   </section>
 
   <div id="cardPickerBackdrop" class="card-picker-backdrop hidden"></div>
@@ -684,6 +759,6 @@
   </nav>
 
   <div id="toast" class="toast" role="status"></div>
-  <script src="./app.js?v=3.3.0"></script>
+  <script src="./app.js?v=3.5.0"></script>
 </body>
 </html>
