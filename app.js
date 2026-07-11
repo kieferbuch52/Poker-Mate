@@ -37,6 +37,7 @@ function initialState(){
   return {
     version:1,
     settings:{baseCurrency:'JPY',lossLimit:0},
+    bankroll:{startingAmount:0,cashBuyIn:0,tournamentBuyIn:0,cashTargetBuyIns:30,tournamentTargetBuyIns:100,transactions:[]},
     venues:[],
     sessions:[],
     hands:[]
@@ -46,7 +47,12 @@ function initialState(){
 function loadState(){
   try{
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return parsed && parsed.version ? {...initialState(),...parsed,settings:{...initialState().settings,...parsed.settings}} : initialState();
+    return parsed && parsed.version ? {
+      ...initialState(),
+      ...parsed,
+      settings:{...initialState().settings,...parsed.settings},
+      bankroll:{...initialState().bankroll,...parsed.bankroll,transactions:Array.isArray(parsed.bankroll?.transactions)?parsed.bankroll.transactions:[]}
+    } : initialState();
   }catch(e){ return initialState(); }
 }
 function saveState(){ localStorage.setItem(STORAGE_KEY,JSON.stringify(state)); }
@@ -80,8 +86,8 @@ function go(pageId){
   if(pageId==='sessions') renderSessions();
   if(pageId==='venues') renderVenues();
   if(pageId==='ranges') renderRangeGrid();
-  if(pageId==='tools'){ renderOdds(); renderPower(); }
-  if(pageId==='more'){ renderHands(); renderSettings(); }
+  if(pageId==='tools'){ renderOdds(); renderDraw(); renderPower(); }
+  if(pageId==='more'){ renderHands(); renderBankroll(); renderSettings(); }
 }
 document.addEventListener('click',e=>{
   const target=e.target.closest('[data-go]');
@@ -351,6 +357,7 @@ document.querySelectorAll('[data-position]').forEach(b=>b.addEventListener('clic
 function setTool(tool){
   document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool===tool));
   document.getElementById('oddsTool').classList.toggle('hidden',tool!=='odds');
+  document.getElementById('drawTool').classList.toggle('hidden',tool!=='draw');
   document.getElementById('powerTool').classList.toggle('hidden',tool!=='power');
 }
 document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
@@ -365,6 +372,30 @@ function renderOdds(){
 document.querySelectorAll('[data-pot-fraction]').forEach(b=>b.addEventListener('click',()=>{
   const pot=num(document.getElementById('oddsPot').value),bet=Math.round(pot*num(b.dataset.potFraction)*100)/100;
   document.getElementById('oddsBet').value=bet;document.getElementById('oddsCall').value=bet;renderOdds();
+}));
+
+
+function renderDraw(){
+  const street=document.getElementById('drawStreet').value;
+  const maxOuts=street==='flop'?47:46;
+  const outs=Math.max(0,Math.min(maxOuts,Math.floor(num(document.getElementById('drawOuts').value))));
+  const nextCards=street==='flop'?47:46;
+  const next=nextCards?outs/nextCards*100:0;
+  const byRiver=street==='flop'
+    ?(1-((47-outs)/47)*((46-outs)/46))*100
+    :next;
+  const ruleApprox=Math.min(100,outs*(street==='flop'?4:2));
+  const miss=100-byRiver;
+  const label=street==='flop'?'リバーまで':'リバー';
+  document.getElementById('drawResult').innerHTML=
+    `次の1枚でヒット <strong>${pct(next)}</strong><br>`+
+    `${label}までに1回以上ヒット <strong>${pct(byRiver)}</strong><br>`+
+    `<span class="muted">2・4の法則では約 ${pct(ruleApprox)}。外れる確率は ${pct(miss)}。</span>`;
+}
+['drawStreet','drawOuts'].forEach(id=>document.getElementById(id).addEventListener('input',renderDraw));
+document.querySelectorAll('[data-draw-outs]').forEach(b=>b.addEventListener('click',()=>{
+  document.getElementById('drawOuts').value=b.dataset.drawOuts;
+  renderDraw();
 }));
 
 function buildPnHandSelect(){
@@ -408,6 +439,97 @@ function renderHands(){
 }
 document.getElementById('handList').addEventListener('click',e=>{
   const b=e.target.closest('[data-delete-hand]');if(b&&confirm('このハンドメモを削除しますか？')){state.hands=state.hands.filter(h=>h.id!==b.dataset.deleteHand);saveState();renderHands();}
+});
+
+
+function bankrollSessionProfit(){
+  return state.sessions.reduce((sum,s)=>sum+sessionProfitBase(s),0);
+}
+function bankrollAdjustmentTotal(){
+  return state.bankroll.transactions.reduce((sum,t)=>sum+num(t.amount),0);
+}
+function currentBankroll(){
+  return num(state.bankroll.startingAmount)+bankrollSessionProfit()+bankrollAdjustmentTotal();
+}
+function renderBankroll(){
+  const b=state.bankroll,current=currentBankroll(),profit=bankrollSessionProfit(),adjustments=bankrollAdjustmentTotal();
+  document.getElementById('bankrollCurrent').textContent=fmt(current,state.settings.baseCurrency);
+  document.getElementById('bankrollCurrent').className=`bankroll-total ${current>=0?'positive':'negative'}`;
+  document.getElementById('bankrollFormula').textContent=
+    `開始 ${fmt(b.startingAmount,state.settings.baseCurrency)} ＋ 収支 ${signed(profit,state.settings.baseCurrency)} ＋ 入出金 ${signed(adjustments,state.settings.baseCurrency)}`;
+
+  const cashBuyIn=num(b.cashBuyIn),mttBuyIn=num(b.tournamentBuyIn);
+  const cashCount=cashBuyIn?current/cashBuyIn:0,mttCount=mttBuyIn?current/mttBuyIn:0;
+  const cashTarget=Math.max(1,num(b.cashTargetBuyIns)||30),mttTarget=Math.max(1,num(b.tournamentTargetBuyIns)||100);
+  const cashProgress=cashBuyIn?Math.max(0,Math.min(100,cashCount/cashTarget*100)):0;
+  const mttProgress=mttBuyIn?Math.max(0,Math.min(100,mttCount/mttTarget*100)):0;
+  document.getElementById('bankrollStats').innerHTML=`
+    <div class="bankroll-stat">
+      <strong>${cashBuyIn?`${cashCount.toFixed(1)} BI`:'未設定'}</strong>
+      <span>リング資金力・目標 ${cashTarget} BI</span>
+      <div class="progress-track"><div class="progress-fill" style="width:${cashProgress}%"></div></div>
+    </div>
+    <div class="bankroll-stat">
+      <strong>${mttBuyIn?`${mttCount.toFixed(1)}回`:'未設定'}</strong>
+      <span>MTT参加可能回数・目標 ${mttTarget}回</span>
+      <div class="progress-track"><div class="progress-fill" style="width:${mttProgress}%"></div></div>
+    </div>
+    <div class="bankroll-stat">
+      <strong class="${profit>=0?'positive':'negative'}">${signed(profit,state.settings.baseCurrency)}</strong>
+      <span>セッション収支</span>
+    </div>
+    <div class="bankroll-stat">
+      <strong class="${adjustments>=0?'positive':'negative'}">${signed(adjustments,state.settings.baseCurrency)}</strong>
+      <span>入出金合計</span>
+    </div>`;
+
+  document.getElementById('bankrollStarting').value=b.startingAmount||0;
+  document.getElementById('bankrollCashBuyIn').value=b.cashBuyIn||0;
+  document.getElementById('bankrollTournamentBuyIn').value=b.tournamentBuyIn||0;
+  document.getElementById('bankrollCashTarget').value=b.cashTargetBuyIns||30;
+  document.getElementById('bankrollTournamentTarget').value=b.tournamentTargetBuyIns||100;
+
+  const list=[...b.transactions].sort((a,z)=>z.date.localeCompare(a.date)||z.createdAt-a.createdAt);
+  document.getElementById('bankrollTransactionList').innerHTML=list.length?list.map(t=>`
+    <article class="log-card">
+      <div class="transaction-row">
+        <div><strong>${t.amount>=0?'入金':'出金'}</strong><div class="log-meta">${esc(t.date)}${t.memo?`・${esc(t.memo)}`:''}</div></div>
+        <div class="amount ${t.amount>=0?'positive':'negative'}">${signed(t.amount,state.settings.baseCurrency)}</div>
+      </div>
+      <div class="log-actions"><button class="mini-btn delete" data-delete-bankroll-transaction="${t.id}">削除</button></div>
+    </article>`).join(''):'<p class="empty muted">入出金の記録はまだありません。</p>';
+}
+document.getElementById('saveBankrollSettingsBtn').addEventListener('click',()=>{
+  state.bankroll.startingAmount=num(document.getElementById('bankrollStarting').value);
+  state.bankroll.cashBuyIn=num(document.getElementById('bankrollCashBuyIn').value);
+  state.bankroll.tournamentBuyIn=num(document.getElementById('bankrollTournamentBuyIn').value);
+  state.bankroll.cashTargetBuyIns=Math.max(1,num(document.getElementById('bankrollCashTarget').value)||30);
+  state.bankroll.tournamentTargetBuyIns=Math.max(1,num(document.getElementById('bankrollTournamentTarget').value)||100);
+  saveState();renderBankroll();showToast('バンクロール基準値を保存しました');
+});
+document.getElementById('bankrollTransactionForm').addEventListener('submit',e=>{
+  e.preventDefault();
+  const raw=num(document.getElementById('bankrollTransactionAmount').value);
+  if(raw<=0)return;
+  const sign=document.getElementById('bankrollTransactionType').value==='withdrawal'?-1:1;
+  state.bankroll.transactions.push({
+    id:uid(),
+    date:document.getElementById('bankrollTransactionDate').value,
+    amount:raw*sign,
+    memo:document.getElementById('bankrollTransactionMemo').value.trim(),
+    createdAt:Date.now()
+  });
+  saveState();
+  e.target.reset();
+  document.getElementById('bankrollTransactionDate').value=today();
+  renderBankroll();showToast('入出金を記録しました');
+});
+document.getElementById('bankrollTransactionList').addEventListener('click',e=>{
+  const b=e.target.closest('[data-delete-bankroll-transaction]');
+  if(b&&confirm('この入出金記録を削除しますか？')){
+    state.bankroll.transactions=state.bankroll.transactions.filter(t=>t.id!==b.dataset.deleteBankrollTransaction);
+    saveState();renderBankroll();
+  }
 });
 
 function renderSettings(){
@@ -464,7 +586,7 @@ document.getElementById('installBtn').addEventListener('click',async()=>{
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));}
 
 function renderAll(){
-  renderHome();renderSessions();renderVenues();renderRangeGrid();renderOdds();renderPower();renderHands();renderSettings();
+  renderHome();renderSessions();renderVenues();renderRangeGrid();renderOdds();renderDraw();renderPower();renderHands();renderBankroll();renderSettings();
 }
-document.getElementById('sessionDate').value=today();document.getElementById('handDate').value=today();
+document.getElementById('sessionDate').value=today();document.getElementById('handDate').value=today();document.getElementById('bankrollTransactionDate').value=today();
 buildPnHandSelect();resetSessionForm();renderAll();

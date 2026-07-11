@@ -240,8 +240,9 @@
         </div>
       </div>
 
-      <div class="segmented two">
+      <div class="segmented three">
         <button class="segment active" data-tool="odds">必要勝率</button>
+        <button class="segment" data-tool="draw">アウト・ドロー</button>
         <button class="segment" data-tool="power">パワーナンバー</button>
       </div>
 
@@ -276,6 +277,38 @@
           <div><span>1.5x pot</span><strong>37.5%</strong></div>
           <div><span>2x pot</span><strong>40.0%</strong></div>
         </div>
+      </section>
+
+
+      <section id="drawTool" class="panel hidden">
+        <h3>アウト数・ドロー勝率</h3>
+        <div class="grid two">
+          <label>現在のストリート
+            <select id="drawStreet">
+              <option value="flop">フロップ（残り2枚）</option>
+              <option value="turn">ターン（残り1枚）</option>
+            </select>
+          </label>
+          <label>クリーンなアウト数
+            <input id="drawOuts" type="number" inputmode="numeric" min="0" max="47" step="1" value="9">
+          </label>
+        </div>
+        <div class="preset-row">
+          <button type="button" data-draw-outs="9">フラッシュ 9</button>
+          <button type="button" data-draw-outs="8">OESD 8</button>
+          <button type="button" data-draw-outs="4">ガット 4</button>
+          <button type="button" data-draw-outs="6">オーバーカード 6</button>
+          <button type="button" data-draw-outs="15">コンボ 15</button>
+        </div>
+        <div id="drawResult" class="tool-result"></div>
+        <div class="quick-table draw-reference">
+          <div><span>4アウト</span><strong>約17% / 9%</strong></div>
+          <div><span>8アウト</span><strong>約32% / 17%</strong></div>
+          <div><span>9アウト</span><strong>約35% / 20%</strong></div>
+          <div><span>12アウト</span><strong>約45% / 26%</strong></div>
+          <div><span>15アウト</span><strong>約54% / 33%</strong></div>
+        </div>
+        <p class="hint">表の右側は「フロップからリバーまで / ターンからリバー」の概算です。相手の上位ドロー、ボードペア、重複アウトなどで逆転されるカードはアウトから差し引いてください。</p>
       </section>
 
       <section id="powerTool" class="panel hidden">
@@ -351,6 +384,69 @@
         <button class="primary" type="submit">ハンドメモを保存</button>
       </form>
       <div id="handList" class="card-list"></div>
+
+
+      <section class="panel bankroll-panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">BANKROLL</p>
+            <h3>バンクロール管理</h3>
+          </div>
+          <div id="bankrollCurrent" class="bankroll-total">¥0</div>
+        </div>
+        <p id="bankrollFormula" class="hint"></p>
+        <div id="bankrollStats" class="bankroll-stats"></div>
+
+        <div class="divider"></div>
+        <h3>基準値</h3>
+        <div class="grid two">
+          <label>開始時のポーカー資金
+            <input id="bankrollStarting" type="number" inputmode="decimal" min="0" step="0.01" value="0">
+          </label>
+          <label>リング1回の想定バイイン
+            <input id="bankrollCashBuyIn" type="number" inputmode="decimal" min="0" step="0.01" value="0">
+          </label>
+        </div>
+        <div class="grid two">
+          <label>MTT 1回の平均参加費
+            <input id="bankrollTournamentBuyIn" type="number" inputmode="decimal" min="0" step="0.01" value="0">
+          </label>
+          <label>リング目標バイイン数
+            <input id="bankrollCashTarget" type="number" inputmode="numeric" min="1" step="1" value="30">
+          </label>
+        </div>
+        <label>MTT目標エントリー数
+          <input id="bankrollTournamentTarget" type="number" inputmode="numeric" min="1" step="1" value="100">
+        </label>
+        <button id="saveBankrollSettingsBtn" class="secondary" type="button">基準値を保存</button>
+
+        <div class="divider"></div>
+        <h3>入金・出金</h3>
+        <form id="bankrollTransactionForm" class="form-panel">
+          <div class="grid two">
+            <label>日付
+              <input id="bankrollTransactionDate" type="date" required>
+            </label>
+            <label>種類
+              <select id="bankrollTransactionType">
+                <option value="deposit">入金</option>
+                <option value="withdrawal">出金</option>
+              </select>
+            </label>
+          </div>
+          <div class="grid two">
+            <label>金額
+              <input id="bankrollTransactionAmount" type="number" inputmode="decimal" min="0.01" step="0.01" required>
+            </label>
+            <label>メモ
+              <input id="bankrollTransactionMemo" type="text" placeholder="例：追加資金、利益を生活費へ">
+            </label>
+          </div>
+          <button class="primary" type="submit">入出金を記録</button>
+        </form>
+        <div id="bankrollTransactionList" class="card-list compact-list"></div>
+        <p class="hint">現在資金は「開始資金＋登録済みセッションの基準通貨収支＋入金－出金」で計算します。チップ残高とは別管理です。</p>
+      </section>
 
       <section class="panel">
         <h3>設定</h3>
