@@ -1,7 +1,7 @@
 {
   "name": "Poker Mate - ポーカー収支・学習ツール",
   "short_name": "Poker Mate",
-  "description": "収支、店舗、バンクロール、レンジ、BBディフェンス、勝率・アウト・必要勝率を管理するスマホ向けポーカーPWA",
+  "description": "収支・店舗・バンクロール・レンジ・勝率計算をまとめたスマホ向けポーカーPWA",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

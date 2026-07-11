@@ -11,7 +11,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=3.3.0">
 </head>
 <body>
   <header class="topbar">
@@ -20,7 +20,7 @@
       <h1>Poker Mate</h1>
     </div>
     <div class="top-actions">
-      <span id="appVersion" class="version-badge">v3.1.0</span>
+      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v3.3.0</button>
       <button id="installBtn" class="ghost hidden">ホーム画面に追加</button>
     </div>
   </header>
@@ -356,56 +356,71 @@
           <button type="button" data-raise-multiple="4">4x</button>
           <button type="button" data-raise-multiple="5">5x</button>
         </div>
+        <button id="calculateRaiseBtn" class="primary" type="button">必要勝率を計算</button>
         <div id="raiseResult" class="tool-result"></div>
         <h3 class="subheading">レイズサイズ別 必要勝率表</h3>
         <div id="raiseOddsTable" class="odds-table"></div>
         <p class="hint">「3x」は、自分のベット額の3倍までレイズされた意味です。レーキと将来のアクションは含めない、コール時点の純粋なポットオッズです。</p>
       </section>
 
-      <section id="equityTool" class="panel hidden">
+      <section id="equityTool" class="panel hidden equity-calculator">
         <div class="section-head">
           <div>
+            <p class="eyebrow">EQUITY CALCULATOR</p>
             <h3>ハンド勝率計算</h3>
-            <p class="hint no-margin">ヘッズアップのショーダウン勝率を計算します。</p>
           </div>
-          <button id="resetEquityBtn" class="ghost compact-button" type="button">リセット</button>
+          <button id="resetEquityBtn" class="ghost compact-button" type="button">クリア</button>
         </div>
 
-        <div class="equity-group">
-          <strong>自分のハンド</strong>
-          <div class="card-select-row">
-            <select id="heroCard1" class="poker-card-select" aria-label="自分の1枚目"></select>
-            <select id="heroCard2" class="poker-card-select" aria-label="自分の2枚目"></select>
+        <div class="equity-board-block">
+          <div class="street-label-row">
+            <span>Flop</span><span>Turn</span><span>River</span>
           </div>
-        </div>
-
-        <div class="equity-group">
-          <div class="section-head">
-            <strong>相手のハンド</strong>
-            <span class="hint no-margin">未選択ならランダム</span>
-          </div>
-          <div class="card-select-row">
-            <select id="villainCard1" class="poker-card-select optional-card" aria-label="相手の1枚目"></select>
-            <select id="villainCard2" class="poker-card-select optional-card" aria-label="相手の2枚目"></select>
+          <div class="visual-card-row board-slots" id="equityBoardSlots">
+            <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="board" data-card-index="0" aria-label="フロップ1枚目">?</button>
+            <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="board" data-card-index="1" aria-label="フロップ2枚目">?</button>
+            <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="board" data-card-index="2" aria-label="フロップ3枚目">?</button>
+            <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="board" data-card-index="3" aria-label="ターン">?</button>
+            <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="board" data-card-index="4" aria-label="リバー">?</button>
           </div>
         </div>
 
-        <div class="equity-group">
-          <strong>ボード</strong>
-          <div class="board-card-row">
-            <select id="boardCard1" class="poker-card-select optional-card" aria-label="フロップ1枚目"></select>
-            <select id="boardCard2" class="poker-card-select optional-card" aria-label="フロップ2枚目"></select>
-            <select id="boardCard3" class="poker-card-select optional-card" aria-label="フロップ3枚目"></select>
-            <select id="boardCard4" class="poker-card-select optional-card" aria-label="ターン"></select>
-            <select id="boardCard5" class="poker-card-select optional-card" aria-label="リバー"></select>
+        <article class="equity-player-card">
+          <div class="equity-player-label">Player 1・自分</div>
+          <div class="equity-player-content">
+            <div class="visual-card-row hole-card-slots">
+              <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="hero" data-card-index="0" aria-label="自分の1枚目">?</button>
+              <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="hero" data-card-index="1" aria-label="自分の2枚目">?</button>
+            </div>
+            <div class="equity-numbers">
+              <div><span>Equity</span><strong id="heroEquity">—</strong></div>
+              <div><span>Win</span><strong id="heroWin">—</strong></div>
+              <div><span>Tie</span><strong id="heroTie">—</strong></div>
+            </div>
           </div>
-        </div>
+        </article>
 
-        <button id="calculateEquityBtn" class="primary" type="button">勝率を計算</button>
-        <div id="equityResult" class="tool-result">
-          自分の2枚を選び、必要に応じて相手とボードを指定してください。
+        <article class="equity-player-card">
+          <div class="equity-player-label section-head"><span>Player 2・相手</span><span id="villainModeLabel" class="random-badge">ランダム</span></div>
+          <div class="equity-player-content">
+            <div class="visual-card-row hole-card-slots">
+              <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="villain" data-card-index="0" aria-label="相手の1枚目">?</button>
+              <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="villain" data-card-index="1" aria-label="相手の2枚目">?</button>
+            </div>
+            <div class="equity-numbers">
+              <div><span>Equity</span><strong id="villainEquity">—</strong></div>
+              <div><span>Win</span><strong id="villainWin">—</strong></div>
+              <div><span>Tie</span><strong id="villainTie">—</strong></div>
+            </div>
+          </div>
+        </article>
+
+        <div class="equity-actions">
+          <button id="calculateEquityBtn" class="primary" type="button">勝率を計算</button>
+          <button id="randomVillainBtn" class="secondary" type="button">相手をランダムに戻す</button>
         </div>
-        <p class="hint">未知カードが少ない場合は全組み合わせを厳密計算し、それ以外は20,000回のモンテカルロ計算を行います。表示はチョップを半分として加えたエクイティです。</p>
+        <div id="equityResult" class="result-box">カード枠をタップして、自分のハンドを選択してください。</div>
+        <p id="equityMethod" class="hint">ボードは未入力でも計算できます。相手を未入力にするとランダムハンドとして計算します。</p>
       </section>
 
       <section id="drawTool" class="panel hidden">
@@ -460,26 +475,17 @@
             <input id="pnBehind" type="number" inputmode="numeric" min="1" max="9" value="3">
           </label>
         </div>
-        <div class="pn-picker-wrap">
+        <div class="pn-picker-wrap visual-picker-wrap">
           <div class="section-head">
             <strong>自分のハンド</strong>
             <span id="pnSelectedLabel" class="selected-hand-label">ATo</span>
           </div>
-          <div class="pn-card-row">
-            <label class="pn-card">
-              <span id="pnCard1Suit" class="pn-suit black-suit">♠</span>
-              <select id="pnCard1Rank" aria-label="1枚目のランク"></select>
-            </label>
-            <label class="pn-card">
-              <span id="pnCard2Suit" class="pn-suit red-suit">♥</span>
-              <select id="pnCard2Rank" aria-label="2枚目のランク"></select>
-            </label>
+          <p class="hint">カードをタップし、下から実際の2枚を選んでください。</p>
+          <div class="visual-card-row pn-hole-cards">
+            <button type="button" class="playing-card empty" data-card-picker="pn" data-card-zone="pn" data-card-index="0" aria-label="パワーナンバーの1枚目">?</button>
+            <button type="button" class="playing-card empty" data-card-picker="pn" data-card-zone="pn" data-card-index="1" aria-label="パワーナンバーの2枚目">?</button>
           </div>
-          <div class="segmented two pn-suit-toggle">
-            <button class="segment" type="button" data-pn-suited="true">同じスート</button>
-            <button class="segment active" type="button" data-pn-suited="false">別スート</button>
-          </div>
-          <p id="pnPairNote" class="hint hidden">同じ数字のペアなのでスート指定は不要です。</p>
+          <button id="clearPnCardsBtn" class="ghost compact-button" type="button">ハンドをクリア</button>
         </div>
         <div id="pnResult" class="tool-result"></div>
         <div class="range-legend">
@@ -605,7 +611,7 @@
           </label>
         </div>
         <p id="lossLimitStatus" class="hint"></p>
-        <p class="app-info-line">アプリバージョン <strong id="settingsVersion">v3.1.0</strong></p>
+        <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal"><span>アプリバージョン</span><strong id="settingsVersion">v3.3.0 <span aria-hidden="true">›</span></strong></button>
         <button id="saveSettingsBtn" class="secondary" type="button">設定を保存</button>
       </section>
 
@@ -632,6 +638,42 @@
     </section>
   </main>
 
+
+
+  <div id="versionHistoryBackdrop" class="version-history-backdrop hidden"></div>
+  <section id="versionHistoryModal" class="version-history-modal hidden" role="dialog" aria-modal="true" aria-labelledby="versionHistoryTitle">
+    <div class="version-history-header">
+      <div>
+        <p class="eyebrow">UPDATE HISTORY</p>
+        <h2 id="versionHistoryTitle">バージョン履歴</h2>
+      </div>
+      <button id="closeVersionHistoryBtn" class="ghost compact-button" type="button" aria-label="バージョン履歴を閉じる">閉じる</button>
+    </div>
+    <div class="current-version-card">
+      <div>
+        <span class="current-version-label">現在のバージョン</span>
+        <strong id="currentVersionInModal">v3.3.0</strong>
+      </div>
+      <span class="up-to-date-badge">最新版</span>
+    </div>
+    <div id="versionHistoryList" class="version-history-list"></div>
+  </section>
+
+  <div id="cardPickerBackdrop" class="card-picker-backdrop hidden"></div>
+  <section id="cardPickerSheet" class="card-picker-sheet hidden" aria-modal="true" role="dialog" aria-label="カードを選択">
+    <div class="card-picker-head">
+      <div>
+        <p class="eyebrow">SELECT A CARD</p>
+        <h3 id="cardPickerTitle">カードを選択</h3>
+      </div>
+      <button id="closeCardPickerBtn" class="ghost compact-button" type="button">閉じる</button>
+    </div>
+    <div id="cardPickerGrid" class="card-deck-grid"></div>
+    <div class="card-picker-actions">
+      <button id="clearActiveCardBtn" class="danger-btn" type="button">この枠を空にする</button>
+    </div>
+  </section>
+
   <nav class="bottom-nav" aria-label="メインメニュー">
     <button class="nav-item active" data-go="home"><span>⌂</span><small>ホーム</small></button>
     <button class="nav-item" data-go="sessions"><span>＋</span><small>収支</small></button>
@@ -642,6 +684,6 @@
   </nav>
 
   <div id="toast" class="toast" role="status"></div>
-  <script src="./app.js"></script>
+  <script src="./app.js?v=3.3.0"></script>
 </body>
 </html>

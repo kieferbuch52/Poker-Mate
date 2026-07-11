@@ -1,6 +1,70 @@
 'use strict';
 
-const APP_VERSION = '3.1.0';
+const APP_VERSION = '3.3.0';
+const APP_CHANGELOG = [
+  {
+    version:'3.3.0',
+    title:'バージョン履歴',
+    current:true,
+    changes:[
+      'バージョン表示をタップできるボタンへ変更',
+      'これまでのアップデート内容を確認できる履歴ウィンドウを追加',
+      'ヘッダーと設定画面のどちらからでも履歴を開けるように改善'
+    ]
+  },
+  {
+    version:'3.2.0',
+    title:'カード選択と計算ツール改善',
+    changes:[
+      '店舗チップ購入時に店舗を選べない不具合を修正',
+      '対レイズ必要勝率ツールの動作を修正',
+      '勝率計算をカード一覧から選択する画面へ刷新',
+      'パワーナンバーの自分のハンドも実カードから選択可能に変更',
+      '更新後に古い画面が残りにくいキャッシュ方式へ改善'
+    ]
+  },
+  {
+    version:'3.1.0',
+    title:'店舗チップ取引',
+    changes:[
+      '店舗で現金購入したチップを記録する機能を追加',
+      'チップの換金と取引履歴を追加',
+      '購入・換金を店舗チップ残高へ自動反映'
+    ]
+  },
+  {
+    version:'3.0.0',
+    title:'勝率・レンジ機能拡張',
+    changes:[
+      'アプリ内にバージョン表示を追加',
+      'ヘッズアップ勝率計算を追加',
+      'BBディフェンスレンジを追加',
+      'レイズされたときの必要勝率表を追加',
+      'パワーナンバーのハンド選択を改善'
+    ]
+  },
+  {
+    version:'2.0.0',
+    title:'資金管理とドロー計算',
+    changes:[
+      'バンクロール管理を追加',
+      '入金・出金の履歴管理を追加',
+      'リングのバイイン数とMTT参加可能回数を表示',
+      'アウト数・ドロー勝率計算ツールを追加'
+    ]
+  },
+  {
+    version:'1.0.0',
+    title:'初期リリース',
+    changes:[
+      'リング・トーナメントの収支管理とグラフ表示',
+      '店舗別成績とチップ残高管理',
+      'RFIハンドレンジ表とパワーナンバー表',
+      'ベット額ごとの必要勝率ツール',
+      'ハンドメモ、JSONバックアップ、CSV出力、オフライン対応'
+    ]
+  }
+];
 const STORAGE_KEY = 'pokerMateDataV1';
 const ranks = ['A','K','Q','J','T','9','8','7','6','5','4','3','2'];
 const cardSuits = [{key:'s',symbol:'♠'},{key:'h',symbol:'♥'},{key:'d',symbol:'♦'},{key:'c',symbol:'♣'}];
@@ -58,7 +122,9 @@ let currentSessionType = 'cash';
 let currentRangePosition = 'UTG';
 let currentRangeMode = 'rfi';
 let selectedPnHand = 'ATo';
-let pnSuited = false;
+let pnCards = ['As','Th'];
+let equityCards = {hero:[null,null],villain:[null,null],board:[null,null,null,null,null]};
+let activeCardTarget = null;
 let deferredInstallPrompt = null;
 
 function initialState(){
@@ -73,19 +139,34 @@ function initialState(){
   };
 }
 
+function normalizeState(raw){
+  const base=initialState();
+  const source=raw&&typeof raw==='object'?raw:{};
+  return {
+    ...base,
+    ...source,
+    settings:{...base.settings,...(source.settings||{})},
+    bankroll:{
+      ...base.bankroll,
+      ...(source.bankroll||{}),
+      transactions:Array.isArray(source.bankroll?.transactions)?source.bankroll.transactions:[]
+    },
+    venues:Array.isArray(source.venues)?source.venues:[],
+    chipTransactions:Array.isArray(source.chipTransactions)?source.chipTransactions:[],
+    sessions:Array.isArray(source.sessions)?source.sessions:[],
+    hands:Array.isArray(source.hands)?source.hands:[]
+  };
+}
 function loadState(){
   try{
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return parsed && parsed.version ? {
-      ...initialState(),
-      ...parsed,
-      settings:{...initialState().settings,...parsed.settings},
-      bankroll:{...initialState().bankroll,...parsed.bankroll,transactions:Array.isArray(parsed.bankroll?.transactions)?parsed.bankroll.transactions:[]},
-      chipTransactions:Array.isArray(parsed.chipTransactions)?parsed.chipTransactions:[]
-    } : initialState();
-  }catch(e){ return initialState(); }
+    const parsed=JSON.parse(localStorage.getItem(STORAGE_KEY));
+    return normalizeState(parsed);
+  }catch(e){
+    console.warn('Stored data could not be loaded.',e);
+    return initialState();
+  }
 }
-function saveState(){ localStorage.setItem(STORAGE_KEY,JSON.stringify(state)); }
+function saveState(){ try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state));return true;}catch(e){console.warn('Save failed.',e);showToast('端末への保存に失敗しました');return false;} }
 function uid(){ return `${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 function num(v){ const n=Number(v); return Number.isFinite(n)?n:0; }
 function today(){ return new Date().toISOString().slice(0,10); }
@@ -328,16 +409,25 @@ function deleteSession(id){
 function renderChipTransactionOptions(){
   const venueSelect=document.getElementById('chipTransactionVenue');
   const filter=document.getElementById('chipTransactionFilter');
+  if(!venueSelect||!filter)return;
+  const venues=Array.isArray(state.venues)?state.venues:[];
   const previousVenue=venueSelect.value;
-  const previousFilter=filter.value;
-  const options=state.venues.map(v=>`<option value="${v.id}">${esc(v.name)}（${esc(v.currency)}）</option>`).join('');
-  venueSelect.innerHTML=state.venues.length?options:'<option value="">先に店舗を登録してください</option>';
-  venueSelect.disabled=!state.venues.length;
-  document.getElementById('chipTransactionAmount').disabled=!state.venues.length;
-  document.getElementById('chipTransactionSubmit').disabled=!state.venues.length;
-  if(state.venues.some(v=>v.id===previousVenue))venueSelect.value=previousVenue;
-  filter.innerHTML=`<option value="all">すべての店舗</option>${options}`;
-  if(previousFilter==='all'||state.venues.some(v=>v.id===previousFilter))filter.value=previousFilter;
+  const previousFilter=filter.value||'all';
+  if(!venues.length){
+    venueSelect.innerHTML='<option value="">先に店舗を登録してください</option>';
+    venueSelect.disabled=true;
+    filter.innerHTML='<option value="all">すべての店舗</option>';
+  }else{
+    venueSelect.disabled=false;
+    venueSelect.innerHTML=venues.map(v=>`<option value="${esc(v.id)}">${esc(v.name)}（${esc(v.currency)}）</option>`).join('');
+    venueSelect.value=venues.some(v=>String(v.id)===String(previousVenue))?previousVenue:String(venues[0].id);
+    filter.innerHTML=`<option value="all">すべての店舗</option>${venues.map(v=>`<option value="${esc(v.id)}">${esc(v.name)}（${esc(v.currency)}）</option>`).join('')}`;
+    filter.value=previousFilter==='all'||venues.some(v=>String(v.id)===String(previousFilter))?previousFilter:'all';
+  }
+  const amount=document.getElementById('chipTransactionAmount');
+  const submit=document.getElementById('chipTransactionSubmit');
+  if(amount)amount.disabled=!venues.length;
+  if(submit)submit.disabled=!venues.length;
   updateChipTransactionPreview();
 }
 function updateChipTransactionPreview(){
@@ -528,7 +618,7 @@ function setTool(tool){
   document.getElementById('drawTool').classList.toggle('hidden',tool!=='draw');
   document.getElementById('powerTool').classList.toggle('hidden',tool!=='power');
 }
-document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
+document.querySelector('.tool-tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tool]');if(b)setTool(b.dataset.tool);});
 
 function renderOdds(){
   const pot=num(document.getElementById('oddsPot').value),bet=num(document.getElementById('oddsBet').value),call=num(document.getElementById('oddsCall').value);
@@ -565,44 +655,109 @@ function renderRaiseOdds(){
     }).join('');
 }
 ['raisePot','raiseOwnBet','raiseTo'].forEach(id=>document.getElementById(id).addEventListener('input',renderRaiseOdds));
+document.getElementById('calculateRaiseBtn').addEventListener('click',renderRaiseOdds);
 document.querySelectorAll('[data-raise-multiple]').forEach(b=>b.addEventListener('click',()=>{
   document.getElementById('raiseTo').value=num(document.getElementById('raiseOwnBet').value)*num(b.dataset.raiseMultiple);
   renderRaiseOdds();
 }));
 
 function cardLabelFromCode(code){
-  if(!code)return '未選択';
+  if(!code)return '?';
   const rank=code[0],suit=cardSuits.find(s=>s.key===code[1]);
   return `${rank}${suit?.symbol||''}`;
 }
 function fullDeck(){
   return ranks.flatMap(rank=>cardSuits.map(suit=>`${rank}${suit.key}`));
 }
-function populatePokerCardSelects(){
-  const options=fullDeck().map(code=>`<option value="${code}">${cardLabelFromCode(code)}</option>`).join('');
-  document.querySelectorAll('.poker-card-select').forEach(select=>{
-    const optional=select.classList.contains('optional-card');
-    select.innerHTML=`${optional?'<option value="">—</option>':''}${options}`;
+function suitClass(code){return code&&['h','d'].includes(code[1])?'red-card':'black-card';}
+function cardFaceHtml(code){
+  if(!code)return '<span class="card-question">?</span>';
+  const suit=cardSuits.find(s=>s.key===code[1])?.symbol||'';
+  return `<span class="card-rank">${code[0]}</span><span class="card-suit-symbol">${suit}</span>`;
+}
+function cardsForContext(context){
+  return context==='pn'?pnCards.filter(Boolean):[...equityCards.hero,...equityCards.villain,...equityCards.board].filter(Boolean);
+}
+function cardTargetLabel(target){
+  if(!target)return 'カードを選択';
+  if(target.context==='pn')return `パワーナンバー・${target.index+1}枚目`;
+  if(target.zone==='hero')return `自分のハンド・${target.index+1}枚目`;
+  if(target.zone==='villain')return `相手のハンド・${target.index+1}枚目`;
+  return target.index<3?`フロップ・${target.index+1}枚目`:target.index===3?'ターン':'リバー';
+}
+function renderCardPicker(){
+  const grid=document.getElementById('cardPickerGrid');
+  if(!grid)return;
+  const used=new Set(cardsForContext(activeCardTarget?.context));
+  const current=activeCardTarget?(activeCardTarget.context==='pn'?pnCards[activeCardTarget.index]:equityCards[activeCardTarget.zone][activeCardTarget.index]):null;
+  grid.innerHTML=cardSuits.map(suit=>`<div class="deck-suit-row ${['h','d'].includes(suit.key)?'red-card':'black-card'}">
+    ${ranks.map(rank=>{
+      const code=`${rank}${suit.key}`;
+      const disabled=used.has(code)&&code!==current;
+      return `<button type="button" class="deck-card-button" data-pick-card="${code}" ${disabled?'disabled':''}><span>${rank}</span><b>${suit.symbol}</b></button>`;
+    }).join('')}
+  </div>`).join('');
+  document.getElementById('cardPickerTitle').textContent=cardTargetLabel(activeCardTarget);
+}
+function openCardPicker(target){
+  activeCardTarget=target;
+  renderCardPicker();
+  document.getElementById('cardPickerBackdrop').classList.remove('hidden');
+  document.getElementById('cardPickerSheet').classList.remove('hidden');
+}
+function closeCardPicker(){
+  activeCardTarget=null;
+  document.getElementById('cardPickerBackdrop').classList.add('hidden');
+  document.getElementById('cardPickerSheet').classList.add('hidden');
+}
+function nextCardTarget(target){
+  if(target.context==='pn')return target.index===0?{context:'pn',zone:'pn',index:1}:null;
+  if(target.zone==='hero')return target.index===0?{context:'equity',zone:'hero',index:1}:null;
+  if(target.zone==='villain')return target.index===0?{context:'equity',zone:'villain',index:1}:null;
+  if(target.zone==='board')return target.index<4?{context:'equity',zone:'board',index:target.index+1}:null;
+  return null;
+}
+function assignCardToTarget(code){
+  if(!activeCardTarget)return;
+  const target={...activeCardTarget};
+  if(target.context==='pn')pnCards[target.index]=code;
+  else equityCards[target.zone][target.index]=code;
+  renderVisualCards();
+  const next=nextCardTarget(target);
+  if(next){activeCardTarget=next;renderCardPicker();}else closeCardPicker();
+}
+function clearActiveCard(){
+  if(!activeCardTarget)return;
+  if(activeCardTarget.context==='pn')pnCards[activeCardTarget.index]=null;
+  else equityCards[activeCardTarget.zone][activeCardTarget.index]=null;
+  renderVisualCards();
+  renderCardPicker();
+}
+function renderVisualCards(){
+  document.querySelectorAll('[data-card-picker]').forEach(slot=>{
+    const context=slot.dataset.cardPicker,zone=slot.dataset.cardZone,index=Number(slot.dataset.cardIndex);
+    const code=context==='pn'?pnCards[index]:equityCards[zone][index];
+    slot.innerHTML=cardFaceHtml(code);
+    slot.classList.toggle('empty',!code);
+    slot.classList.toggle('red-card',!!code&&['h','d'].includes(code[1]));
+    slot.classList.toggle('black-card',!!code&&!['h','d'].includes(code[1]));
   });
-  document.getElementById('heroCard1').value='As';
-  document.getElementById('heroCard2').value='Kh';
-  updateCardOptionAvailability();
+  const villainKnown=equityCards.villain.filter(Boolean).length===2;
+  document.getElementById('villainModeLabel').textContent=villainKnown?'指定ハンド':'ランダム';
+  updatePnHandFromCards();
 }
-function selectedEquityCards(){
-  const ids=['heroCard1','heroCard2','villainCard1','villainCard2','boardCard1','boardCard2','boardCard3','boardCard4','boardCard5'];
-  return ids.map(id=>document.getElementById(id).value).filter(Boolean);
-}
-function updateCardOptionAvailability(){
-  const selects=[...document.querySelectorAll('.poker-card-select')];
-  const chosen=selectedEquityCards();
-  selects.forEach(select=>{
-    [...select.options].forEach(option=>{
-      if(!option.value)return;
-      option.disabled=option.value!==select.value&&chosen.includes(option.value);
-    });
-  });
-}
-document.querySelectorAll('.poker-card-select').forEach(select=>select.addEventListener('change',updateCardOptionAvailability));
+document.addEventListener('click',e=>{
+  const slot=e.target.closest('[data-card-picker]');
+  if(slot){
+    openCardPicker({context:slot.dataset.cardPicker,zone:slot.dataset.cardZone,index:Number(slot.dataset.cardIndex)});
+    return;
+  }
+  const card=e.target.closest('[data-pick-card]');
+  if(card&&!card.disabled){assignCardToTarget(card.dataset.pickCard);}
+});
+document.getElementById('closeCardPickerBtn').addEventListener('click',closeCardPicker);
+document.getElementById('cardPickerBackdrop').addEventListener('click',closeCardPicker);
+document.getElementById('clearActiveCardBtn').addEventListener('click',clearActiveCard);
 
 function rankNumber(card){
   const r=card[0];
@@ -626,62 +781,34 @@ function evaluateSeven(cards){
   const suitsMap={s:[],h:[],d:[],c:[]};
   cards.forEach(c=>suitsMap[c[1]].push(rankNumber(c)));
   const flushValues=Object.values(suitsMap).find(v=>v.length>=5);
-  if(flushValues){
-    const sfHigh=straightHighFromRanks(flushValues);
-    if(sfHigh)return [8,sfHigh];
-  }
+  if(flushValues){const sfHigh=straightHighFromRanks(flushValues);if(sfHigh)return [8,sfHigh];}
   const quad=byCount.find(x=>x[1]===4);
-  if(quad){
-    const kicker=Math.max(...values.filter(v=>v!==quad[0]));
-    return [7,quad[0],kicker];
-  }
+  if(quad)return [7,quad[0],Math.max(...values.filter(v=>v!==quad[0]))];
   const trips=byCount.filter(x=>x[1]>=3).map(x=>x[0]).sort((a,b)=>b-a);
   const pairs=byCount.filter(x=>x[1]>=2).map(x=>x[0]).sort((a,b)=>b-a);
-  if(trips.length){
-    const pairCandidate=pairs.find(v=>v!==trips[0]);
-    if(pairCandidate!==undefined)return [6,trips[0],pairCandidate];
-  }
+  if(trips.length){const pairCandidate=pairs.find(v=>v!==trips[0]);if(pairCandidate!==undefined)return [6,trips[0],pairCandidate];}
   if(flushValues)return [5,...flushValues.sort((a,b)=>b-a).slice(0,5)];
-  const straightHigh=straightHighFromRanks(values);
-  if(straightHigh)return [4,straightHigh];
-  if(trips.length){
-    const kickers=[...new Set(values.filter(v=>v!==trips[0]))].sort((a,b)=>b-a).slice(0,2);
-    return [3,trips[0],...kickers];
-  }
-  if(pairs.length>=2){
-    const top=pairs[0],second=pairs[1];
-    const kicker=Math.max(...values.filter(v=>v!==top&&v!==second));
-    return [2,top,second,kicker];
-  }
-  if(pairs.length===1){
-    const pair=pairs[0];
-    const kickers=[...new Set(values.filter(v=>v!==pair))].sort((a,b)=>b-a).slice(0,3);
-    return [1,pair,...kickers];
-  }
+  const straightHigh=straightHighFromRanks(values);if(straightHigh)return [4,straightHigh];
+  if(trips.length){const kickers=[...new Set(values.filter(v=>v!==trips[0]))].sort((a,b)=>b-a).slice(0,2);return [3,trips[0],...kickers];}
+  if(pairs.length>=2){const top=pairs[0],second=pairs[1],kicker=Math.max(...values.filter(v=>v!==top&&v!==second));return [2,top,second,kicker];}
+  if(pairs.length===1){const pair=pairs[0],kickers=[...new Set(values.filter(v=>v!==pair))].sort((a,b)=>b-a).slice(0,3);return [1,pair,...kickers];}
   return [0,...[...new Set(values)].sort((a,b)=>b-a).slice(0,5)];
 }
 function compareHands(a,b){
   const len=Math.max(a.length,b.length);
-  for(let i=0;i<len;i++){
-    const av=a[i]||0,bv=b[i]||0;
-    if(av!==bv)return av>bv?1:-1;
-  }
+  for(let i=0;i<len;i++){const av=a[i]||0,bv=b[i]||0;if(av!==bv)return av>bv?1:-1;}
   return 0;
 }
-function validateEquityInputs(){
-  const hero=[document.getElementById('heroCard1').value,document.getElementById('heroCard2').value];
-  const villain=[document.getElementById('villainCard1').value,document.getElementById('villainCard2').value];
-  const boardIds=['boardCard1','boardCard2','boardCard3','boardCard4','boardCard5'];
-  const boardValues=boardIds.map(id=>document.getElementById(id).value);
-  if(hero.some(v=>!v))return {error:'自分のハンドを2枚選択してください。'};
-  if((villain[0]&&!villain[1])||(!villain[0]&&villain[1]))return {error:'相手のハンドは2枚とも選ぶか、両方とも未選択にしてください。'};
-  const board=boardValues.filter(Boolean);
-  const hasGap=boardValues.some((v,i)=>!v&&boardValues.slice(i+1).some(Boolean));
-  if(hasGap)return {error:'ボードは左から順番に選択してください。'};
-  if(board.length===1||board.length===2)return {error:'ボードは0枚、フロップ3枚、ターン4枚、リバー5枚で指定してください。'};
-  const all=[...hero,...villain.filter(Boolean),...board];
+function equityInput(){
+  const hero=equityCards.hero.filter(Boolean),villain=equityCards.villain.filter(Boolean),board=equityCards.board.filter(Boolean);
+  if(hero.length!==2)return {error:'自分のハンドを2枚選択してください。'};
+  if(villain.length===1)return {error:'相手のハンドは2枚とも選ぶか、2枚とも空にしてください。'};
+  const firstGap=equityCards.board.findIndex(v=>!v);
+  if(firstGap>=0&&equityCards.board.slice(firstGap+1).some(Boolean))return {error:'ボードは左から順番に選択してください。'};
+  if(board.length===1||board.length===2)return {error:'ボードは0枚、3枚、4枚、5枚で指定してください。'};
+  const all=[...hero,...villain,...board];
   if(new Set(all).size!==all.length)return {error:'同じカードが重複しています。'};
-  return {hero,villain:villain[0]?villain:null,board};
+  return {hero,villain:villain.length===2?villain:null,board};
 }
 function recordEquityResult(result,counter){
   const cmp=compareHands(evaluateSeven([...result.hero,...result.board]),evaluateSeven([...result.villain,...result.board]));
@@ -689,80 +816,56 @@ function recordEquityResult(result,counter){
   counter.total++;
 }
 function calculateEquityNow(){
-  const input=validateEquityInputs();
+  const input=equityInput();
   const resultEl=document.getElementById('equityResult');
   if(input.error){resultEl.innerHTML=`<span class="negative">${input.error}</span>`;return;}
   const known=[...input.hero,...(input.villain||[]),...input.board];
   const remaining=fullDeck().filter(c=>!known.includes(c));
-  const villainMissing=input.villain?0:2;
-  const boardMissing=5-input.board.length;
-  const unknownCount=villainMissing+boardMissing;
+  const villainMissing=input.villain?0:2,boardMissing=5-input.board.length,unknownCount=villainMissing+boardMissing;
   const counter={wins:0,ties:0,losses:0,total:0};
   let method='';
-
   if(unknownCount===0){
-    recordEquityResult({hero:input.hero,villain:input.villain,board:input.board},counter);
-    method='確定ボード';
+    recordEquityResult({hero:input.hero,villain:input.villain,board:input.board},counter);method='確定ボード';
   }else if(unknownCount===1){
-    remaining.forEach(card=>{
-      recordEquityResult({hero:input.hero,villain:input.villain,board:[...input.board,card]},counter);
-    });
-    method=`厳密計算 ${counter.total.toLocaleString()}通り`;
+    remaining.forEach(card=>recordEquityResult({hero:input.hero,villain:input.villain,board:[...input.board,card]},counter));method=`全${counter.total.toLocaleString()}通りを厳密計算`;
   }else if(unknownCount===2&&(villainMissing===2||boardMissing===2)){
-    for(let i=0;i<remaining.length-1;i++){
-      for(let j=i+1;j<remaining.length;j++){
-        const two=[remaining[i],remaining[j]];
-        recordEquityResult({
-          hero:input.hero,
-          villain:villainMissing===2?two:input.villain,
-          board:boardMissing===2?[...input.board,...two]:input.board
-        },counter);
-      }
+    for(let i=0;i<remaining.length-1;i++)for(let j=i+1;j<remaining.length;j++){
+      const two=[remaining[i],remaining[j]];
+      recordEquityResult({hero:input.hero,villain:villainMissing===2?two:input.villain,board:boardMissing===2?[...input.board,...two]:input.board},counter);
     }
-    method=`厳密計算 ${counter.total.toLocaleString()}通り`;
+    method=`全${counter.total.toLocaleString()}通りを厳密計算`;
   }else{
-    const simulations=20000;
+    const simulations=25000;
     for(let n=0;n<simulations;n++){
       const pool=remaining.slice();
-      for(let i=0;i<unknownCount;i++){
-        const j=i+Math.floor(Math.random()*(pool.length-i));
-        [pool[i],pool[j]]=[pool[j],pool[i]];
-      }
-      let cursor=0;
-      const villain=input.villain||[pool[cursor++],pool[cursor++]];
-      const board=[...input.board];
-      while(board.length<5)board.push(pool[cursor++]);
+      for(let i=0;i<unknownCount;i++){const j=i+Math.floor(Math.random()*(pool.length-i));[pool[i],pool[j]]=[pool[j],pool[i]];}
+      let cursor=0;const villain=input.villain||[pool[cursor++],pool[cursor++]];const board=[...input.board];while(board.length<5)board.push(pool[cursor++]);
       recordEquityResult({hero:input.hero,villain,board},counter);
     }
     method=`モンテカルロ ${counter.total.toLocaleString()}回`;
   }
-
-  const win=counter.wins/counter.total*100,tie=counter.ties/counter.total*100,loss=counter.losses/counter.total*100;
-  const equity=(counter.wins+counter.ties/2)/counter.total*100;
-  const villainText=input.villain?input.villain.map(cardLabelFromCode).join(' '):'ランダムハンド';
-  resultEl.innerHTML=`
-    エクイティ <strong>${pct(equity)}</strong>
-    <div class="equity-meter"><div class="equity-meter-fill" style="width:${equity}%"></div></div>
-    <div class="equity-breakdown">
-      <div><strong class="positive">${pct(win)}</strong><span>勝ち</span></div>
-      <div><strong>${pct(tie)}</strong><span>引き分け</span></div>
-      <div><strong class="negative">${pct(loss)}</strong><span>負け</span></div>
-    </div>
-    <p class="hint">相手：${villainText}・${method}</p>`;
+  const heroWin=counter.wins/counter.total*100,tie=counter.ties/counter.total*100,villainWin=counter.losses/counter.total*100;
+  const heroEq=(counter.wins+counter.ties/2)/counter.total*100,villainEq=100-heroEq;
+  document.getElementById('heroEquity').textContent=pct(heroEq);document.getElementById('heroWin').textContent=pct(heroWin);document.getElementById('heroTie').textContent=pct(tie);
+  document.getElementById('villainEquity').textContent=pct(villainEq);document.getElementById('villainWin').textContent=pct(villainWin);document.getElementById('villainTie').textContent=pct(tie);
+  resultEl.innerHTML=`自分のエクイティ <strong>${pct(heroEq)}</strong><div class="equity-meter"><div class="equity-meter-fill" style="width:${heroEq}%"></div></div>`;
+  document.getElementById('equityMethod').textContent=`${method}。Tieは双方のエクイティへ半分ずつ加算しています。`;
 }
 document.getElementById('calculateEquityBtn').addEventListener('click',()=>{
-  const button=document.getElementById('calculateEquityBtn');
-  button.disabled=true;
-  document.getElementById('equityResult').textContent='計算中…';
-  setTimeout(()=>{calculateEquityNow();button.disabled=false;},25);
+  const button=document.getElementById('calculateEquityBtn');button.disabled=true;document.getElementById('equityResult').textContent='計算中…';
+  setTimeout(()=>{try{calculateEquityNow();}finally{button.disabled=false;}},20);
 });
 document.getElementById('resetEquityBtn').addEventListener('click',()=>{
-  document.querySelectorAll('.poker-card-select').forEach(select=>select.value='');
-  document.getElementById('heroCard1').value='As';
-  document.getElementById('heroCard2').value='Kh';
-  document.getElementById('equityResult').textContent='自分の2枚を選び、必要に応じて相手とボードを指定してください。';
-  updateCardOptionAvailability();
+  equityCards={hero:[null,null],villain:[null,null],board:[null,null,null,null,null]};resetEquityStats();renderVisualCards();
 });
+document.getElementById('randomVillainBtn').addEventListener('click',()=>{
+  equityCards.villain=[null,null];resetEquityStats();renderVisualCards();showToast('相手をランダムハンドに戻しました');
+});
+function resetEquityStats(){
+  ['heroEquity','heroWin','heroTie','villainEquity','villainWin','villainTie'].forEach(id=>document.getElementById(id).textContent='—');
+  document.getElementById('equityResult').textContent='カード枠をタップして、自分のハンドを選択してください。';
+  document.getElementById('equityMethod').textContent='ボードは未入力でも計算できます。相手を未入力にするとランダムハンドとして計算します。';
+}
 
 function renderDraw(){
   const street=document.getElementById('drawStreet').value;
@@ -787,68 +890,50 @@ document.querySelectorAll('[data-draw-outs]').forEach(b=>b.addEventListener('cli
   renderDraw();
 }));
 
+function canonicalHandFromCards(cards){
+  if(!cards[0]||!cards[1])return null;
+  const [a,b]=cards,ra=a[0],rb=b[0];
+  if(ra===rb)return `${ra}${rb}`;
+  const ai=ranks.indexOf(ra),bi=ranks.indexOf(rb),high=ai<bi?ra:rb,low=ai<bi?rb:ra;
+  return `${high}${low}${a[1]===b[1]?'s':'o'}`;
+}
+function representativeCardsForHand(hand){
+  const first=hand[0],second=hand[1];
+  if(hand.length===2)return [`${first}s`,`${second}h`];
+  return hand.endsWith('s')?[`${first}s`,`${second}s`]:[`${first}s`,`${second}h`];
+}
 function buildPnHandPicker(){
-  const options=ranks.map(r=>`<option value="${r}">${r}</option>`).join('');
-  document.getElementById('pnCard1Rank').innerHTML=options;
-  document.getElementById('pnCard2Rank').innerHTML=options;
-  syncPnPickerFromHand();
+  pnCards=representativeCardsForHand(selectedPnHand);
+  renderVisualCards();
 }
-function selectedHandFromPnPicker(){
-  const first=document.getElementById('pnCard1Rank').value;
-  const second=document.getElementById('pnCard2Rank').value;
-  if(first===second)return `${first}${second}`;
-  const firstIndex=ranks.indexOf(first),secondIndex=ranks.indexOf(second);
-  const high=firstIndex<secondIndex?first:second;
-  const low=firstIndex<secondIndex?second:first;
-  return `${high}${low}${pnSuited?'s':'o'}`;
+function updatePnHandFromCards(){
+  const hand=canonicalHandFromCards(pnCards);
+  if(hand)selectedPnHand=hand;
+  document.getElementById('pnSelectedLabel').textContent=hand||'2枚選択';
+  if(document.getElementById('pnResult'))renderPower();
 }
-function syncPnPickerFromHand(){
-  const pair=selectedPnHand.length===2;
-  const first=selectedPnHand[0],second=selectedPnHand[1];
-  document.getElementById('pnCard1Rank').value=first;
-  document.getElementById('pnCard2Rank').value=second;
-  pnSuited=!pair&&selectedPnHand.endsWith('s');
-  document.querySelectorAll('[data-pn-suited]').forEach(b=>{
-    b.disabled=pair;
-    b.classList.toggle('active',!pair&&String(pnSuited)===b.dataset.pnSuited);
-  });
-  document.getElementById('pnPairNote').classList.toggle('hidden',!pair);
-  document.getElementById('pnCard1Suit').textContent='♠';
-  document.getElementById('pnCard2Suit').textContent=pair||!pnSuited?'♥':'♠';
-  document.getElementById('pnCard2Suit').className=`pn-suit ${pair||!pnSuited?'red-suit':'black-suit'}`;
-  document.getElementById('pnSelectedLabel').textContent=selectedPnHand;
-}
-function updatePnFromPicker(){
-  selectedPnHand=selectedHandFromPnPicker();
-  syncPnPickerFromHand();
-  renderPower();
-}
-document.getElementById('pnCard1Rank').addEventListener('change',updatePnFromPicker);
-document.getElementById('pnCard2Rank').addEventListener('change',updatePnFromPicker);
-document.querySelectorAll('[data-pn-suited]').forEach(b=>b.addEventListener('click',()=>{
-  if(b.disabled)return;
-  pnSuited=b.dataset.pnSuited==='true';
-  updatePnFromPicker();
-}));
 function pnForHand(hand){
+  if(!hand)return 0;
   for(let r=0;r<13;r++)for(let c=0;c<13;c++)if(handLabel(r,c)===hand)return powerMatrix[r][c];
   return 1;
 }
+document.getElementById('clearPnCardsBtn').addEventListener('click',()=>{pnCards=[null,null];renderVisualCards();});
+
 function renderPower(){
   const stack=num(document.getElementById('pnStack').value),cpr=num(document.getElementById('pnSb').value)+num(document.getElementById('pnBb').value)+num(document.getElementById('pnAnteTotal').value);
-  const behind=Math.max(1,num(document.getElementById('pnBehind').value)),m=cpr?stack/cpr:0,required=m*behind,pn=pnForHand(selectedPnHand);
-  const ok=pn>=required;
-  document.getElementById('pnResult').innerHTML=`M値 <strong>${m.toFixed(2)}</strong>・必要PN <strong>${required.toFixed(1)}</strong><br>
-    ${selectedPnHand} のPNは <strong>${pn>=80?'75+':pn}</strong>：
-    <span class="${ok?'positive':'negative'}">${ok?'数式上はプッシュ候補':'数式上はフォールド寄り'}</span>`;
+  const behind=Math.max(1,num(document.getElementById('pnBehind').value)),m=cpr?stack/cpr:0,required=m*behind,hand=canonicalHandFromCards(pnCards),pn=pnForHand(hand);
+  if(!hand){document.getElementById('pnResult').innerHTML=`M値 <strong>${m.toFixed(2)}</strong>・必要PN <strong>${required.toFixed(1)}</strong><br><span class="muted">自分のハンドを2枚選択してください。</span>`;}else{
+    const ok=pn>=required;
+    document.getElementById('pnResult').innerHTML=`M値 <strong>${m.toFixed(2)}</strong>・必要PN <strong>${required.toFixed(1)}</strong><br>${hand} のPNは <strong>${pn>=80?'75+':pn}</strong>：<span class="${ok?'positive':'negative'}">${ok?'数式上はプッシュ候補':'数式上はフォールド寄り'}</span>`;
+  }
   document.getElementById('pnGrid').innerHTML=ranks.flatMap((_,r)=>ranks.map((__,c)=>{
     const hand=handLabel(r,c),val=powerMatrix[r][c],klass=val>=35?'pn-high':val>=20?'pn-mid':'pn-low';
-    return `<button class="hand-cell ${klass} ${hand===selectedPnHand?'selected':''}" data-pn-hand="${hand}" title="${hand}: ${val>=80?'75+':val}">${hand}<small>${val>=80?'75+':val<2?'–':val}</small></button>`;
+    return `<button class="hand-cell ${klass} ${hand===canonicalHandFromCards(pnCards)?'selected':''}" data-pn-hand="${hand}" title="${hand}: ${val>=80?'75+':val}">${hand}<small>${val>=80?'75+':val<2?'–':val}</small></button>`;
   })).join('');
 }
 ['pnStack','pnSb','pnBb','pnAnteTotal','pnBehind'].forEach(id=>document.getElementById(id).addEventListener('input',renderPower));
 document.getElementById('pnGrid').addEventListener('click',e=>{
-  const b=e.target.closest('[data-pn-hand]');if(!b)return;selectedPnHand=b.dataset.pnHand;syncPnPickerFromHand();renderPower();
+  const b=e.target.closest('[data-pn-hand]');if(!b)return;selectedPnHand=b.dataset.pnHand;pnCards=representativeCardsForHand(selectedPnHand);renderVisualCards();renderPower();
 });
 
 document.getElementById('handForm').addEventListener('submit',e=>{
@@ -958,9 +1043,54 @@ document.getElementById('bankrollTransactionList').addEventListener('click',e=>{
   }
 });
 
+
+function renderVersionHistory(){
+  const list=document.getElementById('versionHistoryList');
+  document.getElementById('currentVersionInModal').textContent=`v${APP_VERSION}`;
+  list.innerHTML=APP_CHANGELOG.map((release,index)=>`
+    <article class="version-release ${release.current?'current-release':''}">
+      <div class="version-release-marker">
+        <span></span>
+        ${index<APP_CHANGELOG.length-1?'<i></i>':''}
+      </div>
+      <div class="version-release-content">
+        <div class="version-release-heading">
+          <div>
+            <strong>v${release.version}</strong>
+            <span>${esc(release.title)}</span>
+          </div>
+          ${release.current?'<em>現在</em>':''}
+        </div>
+        <ul>${release.changes.map(change=>`<li>${esc(change)}</li>`).join('')}</ul>
+      </div>
+    </article>
+  `).join('');
+}
+function openVersionHistory(){
+  renderVersionHistory();
+  document.getElementById('versionHistoryBackdrop').classList.remove('hidden');
+  document.getElementById('versionHistoryModal').classList.remove('hidden');
+  document.body.classList.add('modal-open');
+  document.getElementById('closeVersionHistoryBtn').focus();
+}
+function closeVersionHistory(){
+  document.getElementById('versionHistoryBackdrop').classList.add('hidden');
+  document.getElementById('versionHistoryModal').classList.add('hidden');
+  document.body.classList.remove('modal-open');
+}
+document.getElementById('appVersion').addEventListener('click',openVersionHistory);
+document.getElementById('settingsVersionRow').addEventListener('click',openVersionHistory);
+document.getElementById('closeVersionHistoryBtn').addEventListener('click',closeVersionHistory);
+document.getElementById('versionHistoryBackdrop').addEventListener('click',closeVersionHistory);
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&!document.getElementById('versionHistoryModal').classList.contains('hidden')){
+    closeVersionHistory();
+  }
+});
+
 function renderSettings(){
   document.getElementById('appVersion').textContent=`v${APP_VERSION}`;
-  document.getElementById('settingsVersion').textContent=`v${APP_VERSION}`;
+  document.getElementById('settingsVersion').innerHTML=`v${APP_VERSION} <span aria-hidden="true">›</span>`;
   document.getElementById('baseCurrency').value=state.settings.baseCurrency||'JPY';
   document.getElementById('lossLimit').value=state.settings.lossLimit||0;updateLossLimitStatus();
 }
@@ -994,13 +1124,7 @@ document.getElementById('importFile').addEventListener('change',async e=>{
   try{
     const data=JSON.parse(await file.text());
     if(data.version&&Array.isArray(data.sessions)){
-      state={
-        ...initialState(),
-        ...data,
-        settings:{...initialState().settings,...data.settings},
-        bankroll:{...initialState().bankroll,...data.bankroll,transactions:Array.isArray(data.bankroll?.transactions)?data.bankroll.transactions:[]},
-        chipTransactions:Array.isArray(data.chipTransactions)?data.chipTransactions:[]
-      };
+      state=normalizeState(data);
     }
     else if(Array.isArray(data.sessions)){
       const importedVenue={id:uid(),name:'旧アプリ取込',currency:'PHP',chipBalance:0,fxRate:1,notes:''};
@@ -1025,4 +1149,4 @@ function renderAll(){
   renderHome();renderSessions();renderVenues();renderRangeGrid();renderOdds();renderRaiseOdds();renderDraw();renderPower();renderHands();renderBankroll();renderSettings();
 }
 document.getElementById('sessionDate').value=today();document.getElementById('handDate').value=today();document.getElementById('bankrollTransactionDate').value=today();document.getElementById('chipTransactionDate').value=today();
-populatePokerCardSelects();buildPnHandPicker();resetSessionForm();renderAll();
+buildPnHandPicker();resetSessionForm();renderAll();renderVisualCards();
