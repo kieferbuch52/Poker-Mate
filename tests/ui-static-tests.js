@@ -24,7 +24,7 @@ if(!app.includes('FIREBASE_CONFIG_KEY'))throw new Error('missing Firebase config
 if(!auth.includes('GoogleAuthProvider'))throw new Error('missing Google provider');
 if(!auth.includes('signInWithRedirect'))throw new Error('missing mobile redirect');
 if(!auth.includes('signInWithPopup'))throw new Error('missing desktop popup');
-if(!sw.includes('auth.mjs?v=8.0.0'))throw new Error('auth module not cached');
+if(!sw.includes('auth.mjs?v=8.1.1'))throw new Error('auth module not cached');
 if(!css.includes('.yokosawa-navy'))throw new Error('missing Yokosawa colors');
 
 const match=app.match(/const YOKOSAWA_TIER_ROWS=\[(.*?)\];/s);
@@ -35,3 +35,15 @@ const valid=new Set(['navy','red','yellow','green','blue','white','purple','pink
 for(const row of rows)for(const tier of row)if(!valid.has(tier))throw new Error(`invalid Yokosawa tier ${tier}`);
 
 console.log('UI and authentication static tests passed');
+
+
+if(!html.includes('data-yokosawa-game="ring"'))throw new Error('missing ring/tournament controls');
+if(!html.includes('data-yokosawa-situation="facing3bet"'))throw new Error('missing facing-3bet control');
+if(!css.includes('.yokosawa-action-fourbet'))throw new Error('missing 4bet response color');
+if(!css.includes('.yokosawa-action-call'))throw new Error('missing call response color');
+
+
+if(!html.includes('data-pot-fraction="0.25"'))throw new Error('missing 1/4 pot preset');
+if(!app.includes("{label:'1/4 pot',fraction:1/4}"))throw new Error('missing 1/4 pot reference row');
+if(html.includes('id="pnFirstIn"'))throw new Error('PN First in control should be removed');
+if(app.includes("getElementById('pnFirstIn')"))throw new Error('PN First in logic should be removed');

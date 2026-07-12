@@ -1793,3 +1793,32 @@ body:not(.sticky-controls-disabled) .more-view-tabs,body:not(.sticky-controls-di
 /* v8.0 auth/display */
 .account-profile-row{display:flex;align-items:center;gap:12px;margin-top:10px;padding:11px;border:1px solid rgba(255,255,255,.07);border-radius:13px;background:rgba(255,255,255,.022)}.account-avatar{flex:0 0 auto;width:52px;height:52px;border-radius:50%;font-size:1.1rem}.account-profile-copy{display:grid;min-width:0;gap:2px}.account-profile-copy strong,.account-profile-copy span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.account-profile-copy strong{font-size:.78rem}.account-profile-copy span{color:var(--muted);font-size:.62rem}.account-profile-copy small{margin-top:4px;color:var(--muted);font-size:.54rem;line-height:1.45}.account-action-row{display:flex;gap:7px;margin-top:10px}.firebase-config-details{margin-top:10px;border-top:1px solid rgba(255,255,255,.07);padding-top:8px}.firebase-config-details summary{cursor:pointer;color:var(--muted);font-size:.64rem;font-weight:850}.firebase-config-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:9px}.firebase-config-grid label{min-width:0;color:var(--muted);font-size:.55rem}.firebase-config-grid input{width:100%;margin-top:4px}.button-row{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}.toggle-setting-row{display:flex!important;align-items:center;gap:9px;margin:10px 0;padding:9px;border:1px solid var(--line);border-radius:11px}.toggle-setting-row input{width:auto!important;margin:0!important}.toggle-setting-row span{display:grid;gap:2px}.toggle-setting-row strong{font-size:.66rem}.toggle-setting-row small{color:var(--muted);font-size:.54rem}
 @media(max-width:600px){.header-user-button>span:last-child{display:none}.header-user-button{padding-right:3px}.home-quick-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.yokosawa-controls{grid-template-columns:1fr}.firebase-config-grid{grid-template-columns:1fr}}@media(max-width:360px){.app-mark{display:none}.topbar-context h1{max-width:135px}}
+
+
+/* v8.1 Yokosawa game and facing-3bet controls */
+.yokosawa-controls{grid-template-columns:repeat(2,minmax(0,1fr))}
+.yokosawa-segment-block{display:grid;gap:5px}
+.yokosawa-controls>label{min-width:0}
+.yokosawa-guide-summary{min-height:64px}
+.yokosawa-warning{grid-column:1/-1;padding:8px 10px;border:1px solid rgba(255,193,92,.28);border-radius:10px;background:rgba(255,193,92,.07);color:var(--warn);font-size:.57rem;line-height:1.5}
+.yokosawa-response-cell{display:grid;place-content:center;gap:1px;color:#fff!important;text-shadow:none!important}
+.yokosawa-response-cell small{display:block;font-size:.43rem;font-weight:950;line-height:1}
+.yokosawa-action-fourbet{border-color:#ff6b78!important;background:linear-gradient(145deg,#b92f42,#6d1524)!important}
+.yokosawa-action-call{border-color:#79c7ff!important;background:linear-gradient(145deg,#267db5,#16476c)!important}
+.yokosawa-action-fold{border-color:#4d5660!important;background:#30363d!important;color:#88919a!important}
+.yokosawa-fourbet-dot{background:#e9485d}.yokosawa-call-dot{background:#3f9ed6}.yokosawa-fold-dot{background:#505963}
+@media(max-width:600px){.yokosawa-controls{grid-template-columns:1fr}.yokosawa-warning{grid-column:auto}}
+
+
+/* v8.1.1: PN scope and Poker Mate aggressive-action colors */
+.pn-scope-controls{
+  grid-template-columns:minmax(0,1fr) auto;
+}
+.hand-cell.shove{
+  background:rgba(255,116,116,.88);
+  color:#230404;
+  border-color:transparent;
+}
+.dot.shove{
+  background:#ff7474;
+}

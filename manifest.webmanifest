@@ -1,7 +1,7 @@
 {
   "name": "Poker Mate - ポーカー収支・学習ツール",
   "short_name": "Poker Mate",
-  "description": "標準・ヨコサワ式レンジ、Googleログイン、完全勝率計算、オッズ、収支管理を備えたポーカーPWA",
+  "description": "3BETとオールインを色分けした標準レンジ、リング・トーナメント・3BET対応のヨコサワ式レンジ、Googleログイン、勝率・オッズ・収支管理を備えたポーカーPWA",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

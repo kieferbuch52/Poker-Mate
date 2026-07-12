@@ -11,7 +11,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./styles.css?v=8.0.0">
+  <link rel="stylesheet" href="./styles.css?v=8.1.1">
 </head>
 <body>
   <header class="topbar">
@@ -24,7 +24,7 @@
         <span id="headerUserAvatar" class="header-user-avatar">G</span><span id="headerUserLabel">未ログイン</span>
       </button>
       <button id="globalQuickButton" class="top-quick-button" type="button" aria-haspopup="dialog" aria-controls="quickActionSheet" aria-label="クイック操作を開く">＋</button>
-      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v8.0.0</button>
+      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v8.1.1</button>
       <button id="installBtn" class="ghost hidden">ホーム画面に追加</button>
     </div>
   </header>
@@ -511,15 +511,39 @@
         </div>
         </div>
         <div id="yokosawaRangeControls" class="hidden yokosawa-controls">
-          <label>参加基準
+          <div class="yokosawa-segment-block">
+            <span class="range-selector-label">ゲーム形式</span>
+            <div class="segmented two">
+              <button class="segment active" data-yokosawa-game="ring" type="button">リング</button>
+              <button class="segment" data-yokosawa-game="tournament" type="button">トーナメント</button>
+            </div>
+          </div>
+          <div class="yokosawa-segment-block">
+            <span class="range-selector-label">確認する場面</span>
+            <div class="segmented two">
+              <button class="segment active" data-yokosawa-situation="firstIn" type="button">First in</button>
+              <button class="segment" data-yokosawa-situation="facing3bet" type="button">3BETされた</button>
+            </div>
+          </div>
+          <label id="yokosawaThresholdField">自分のオープン基準
             <select id="yokosawaThreshold">
-              <option value="navy">後ろ8人・強</option><option value="red">後ろ8人・中</option>
-              <option value="yellow">後ろ8人・弱</option><option value="green" selected>後ろ6〜7人</option>
-              <option value="blue">後ろ4〜5人</option><option value="white">後ろ3人</option>
-              <option value="purple">後ろ2人</option><option value="pink">BBでBTNレイズにコール</option>
+              <option value="navy">後ろ8人・強</option>
+              <option value="red">後ろ8人・中</option>
+              <option value="yellow">後ろ8人・弱</option>
+              <option value="green" selected>後ろ6〜7人</option>
+              <option value="blue">後ろ4〜5人</option>
+              <option value="white">後ろ3人</option>
+              <option value="purple">後ろ2人</option>
+              <option value="pink">BBでBTNレイズにコール</option>
             </select>
           </label>
-          <div class="yokosawa-guide-summary"><strong>100BB・アンティなしの初心者向け判断表</strong><span>公開された色ランクを13×13グリッドへ独自再構成しています。</span></div>
+          <div class="yokosawa-guide-summary">
+            <strong id="yokosawaSummaryTitle">リング・First in</strong>
+            <span id="yokosawaSummaryText">100BB・アンティなしの参加判断を表示します。</span>
+          </div>
+          <div id="yokosawaTournamentWarning" class="yokosawa-warning hidden">
+            トーナメント表示は40BB以上のアンティゲーム向け簡易応用です。25BB以下はPoker Mateのトーナメントレンジを使用してください。
+          </div>
         </div>
       </section>
 
@@ -546,7 +570,7 @@
           <div id="rangeAssumptionContent"></div>
         </details>
         <div id="yokosawaAttribution" class="yokosawa-attribution hidden">
-          <p>世界のヨコサワさんが公開している色ランクと運用ルールをPoker Mate用に独自再構成した非公式表示です。公式画像そのものではありません。</p>
+          <p>世界のヨコサワさんが公開している色ランクと運用ルールをPoker Mate用に独自再構成した非公式表示です。トーナメントはアンティゲームへの公開応用ルール、3BET対応は色ランク差による簡易判断です。</p>
           <div><a href="https://www.youtube.com/watch?v=NDouTGvor-k" target="_blank" rel="noopener noreferrer">公式解説動画</a><a href="https://x.com/MasatoYokosawa/status/1492782429123317763" target="_blank" rel="noopener noreferrer">公開投稿</a></div>
         </div>
       </section>
@@ -602,6 +626,7 @@
             <label><span>コール額</span><input id="oddsCall" type="number" inputmode="decimal" min="0" value="50"></label>
           </div>
           <div class="preset-row">
+            <button type="button" data-pot-fraction="0.25">1/4 pot</button>
             <button type="button" data-pot-fraction="0.333">1/3 pot</button>
             <button type="button" data-pot-fraction="0.5">1/2 pot</button>
             <button type="button" data-pot-fraction="0.667">2/3 pot</button>
@@ -833,9 +858,8 @@
         </div>
 
         <div class="pn-scope-controls">
-          <label class="check-control"><input id="pnFirstIn" type="checkbox" checked><span>First in</span></label>
           <label>局面<select id="pnIcmMode"><option value="chip">chipEV</option><option value="icm">ICMあり</option></select></label>
-          <span id="pnScopeStatus" class="summary-badge">適用条件内</span>
+          <span id="pnScopeStatus" class="summary-badge">chipEV</span>
         </div>
 
         <div class="pn-hand-compact">
@@ -1073,7 +1097,7 @@
         <button id="saveSettingsBtn" class="secondary" type="button">基本設定を保存</button>
         <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">
           <span>アプリバージョン</span>
-          <strong id="settingsVersion">v8.0.0 <span aria-hidden="true">›</span></strong>
+          <strong id="settingsVersion">v8.1.1 <span aria-hidden="true">›</span></strong>
         </button>
       </section>
 
@@ -1140,7 +1164,7 @@
     <div class="current-version-card">
       <div>
         <span class="current-version-label">現在のバージョン</span>
-        <strong id="currentVersionInModal">v8.0.0</strong>
+        <strong id="currentVersionInModal">v8.1.1</strong>
       </div>
       <span class="up-to-date-badge">最新版</span>
     </div>
@@ -1217,9 +1241,9 @@
   </nav>
 
   <div id="toast" class="toast" role="status"></div>
-  <script src="./firebase-config.js?v=8.0.0"></script>
-  <script src="./core-utils.js?v=8.0.0"></script>
-  <script src="./app.js?v=8.0.0"></script>
-  <script type="module" src="./auth.mjs?v=8.0.0"></script>
+  <script src="./firebase-config.js?v=8.1.1"></script>
+  <script src="./core-utils.js?v=8.1.1"></script>
+  <script src="./app.js?v=8.1.1"></script>
+  <script type="module" src="./auth.mjs?v=8.1.1"></script>
 </body>
 </html>

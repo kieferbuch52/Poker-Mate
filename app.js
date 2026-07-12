@@ -1,11 +1,38 @@
 'use strict';
 
-const APP_VERSION = '8.0.0';
+const APP_VERSION = '8.1.1';
 const APP_CHANGELOG = [
+  {
+    version:'8.1.1',
+    title:'オッズ・PN・レンジ配色の調整',
+    current:true,
+    changes:[
+      'ベットにコールのプリセットと早見表へ1/4 potを追加',
+      'パワーナンバーからFirst inの入力と適用外判定を削除',
+      'パワーナンバーはchipEVとICM参考値のみを表示',
+      'Poker Mateレンジの3BETを青色で表示',
+      '15BB以下のオールインを赤色で表示',
+      'BBディフェンスの凡例と説明を3BET／オールインで切り替え'
+    ]
+  },
+  {
+    version:'8.1.0',
+    title:'ヨコサワ式のゲーム別・3BET対応',
+    current:false,
+    changes:[
+      'ヨコサワ式へリングとトーナメントの切り替えを追加',
+      'トーナメントではアンティゲーム向けに基準色を1ランク広げて表示',
+      'ヨコサワ式へFirst inと3BETされた場面の切り替えを追加',
+      '3BETされた場面で4BET・CALL・FOLDをハンド別に表示',
+      '自分のオープン下限から相手の3BET下限を推定して表示',
+      'トーナメント表示は40BB以上向けであることを明記',
+      '25BB以下ではPoker Mateトーナメントレンジを案内'
+    ]
+  },
   {
     version:'8.0.0',
     title:'UI整理・ヨコサワ式レンジ・Google認証',
-    current:true,
+    current:false,
     changes:[
       'ヘッダーへ現在ページ名とGoogleアカウント表示を追加',
       'ホームのクイック操作を6項目へ整理',
@@ -756,6 +783,8 @@ function loadUiState(){
     lastStake:'',
     rangeSource:'pokerMate',
     yokosawaThreshold:'green',
+    yokosawaGame:'ring',
+    yokosawaSituation:'firstIn',
     rangeGame:'ring',
     tournamentStack:'25',
     headsUpStack:'20',
@@ -2156,7 +2185,6 @@ const YOKOSAWA_TIER_META={
   purple:{label:'後ろ2人',short:'2人'},pink:{label:'BBでBTNレイズにコール',short:'BB'},
   fold:{label:'フォールド',short:'Fold'}
 };
-/* 公開された色ランクをPoker Mate用13x13グリッドへ独自再構成。公式画像ではありません。 */
 const YOKOSAWA_TIER_ROWS=[
  ['navy','navy','red','red','red','green','green','green','green','green','green','green','green'],
  ['navy','navy','red','yellow','green','green','white','white','white','white','white','white','white'],
@@ -2173,34 +2201,117 @@ const YOKOSAWA_TIER_ROWS=[
  ['pink','fold','fold','fold','fold','fold','fold','fold','fold','fold','fold','fold','blue']
 ];
 const yokosawaTierByHand=(()=>{
- const map={};
- for(let row=0;row<13;row++)for(let col=0;col<13;col++)map[handLabel(row,col)]=YOKOSAWA_TIER_ROWS[row][col];
- return map;
+  const map={};
+  for(let row=0;row<13;row++)for(let col=0;col<13;col++)map[handLabel(row,col)]=YOKOSAWA_TIER_ROWS[row][col];
+  return map;
 })();
+function yokosawaTierIndex(tier){
+  const index=YOKOSAWA_TIER_ORDER.indexOf(tier);
+  return index>=0?index:YOKOSAWA_TIER_ORDER.length-1;
+}
+function yokosawaEffectiveThreshold(game,threshold){
+  const base=yokosawaTierIndex(threshold);
+  if(game==='tournament'&&threshold!=='pink'){
+    return YOKOSAWA_TIER_ORDER[Math.min(yokosawaTierIndex('purple'),base+1)];
+  }
+  return threshold;
+}
+function yokosawaOpponentThreeBetThreshold(game,threshold){
+  const effective=yokosawaEffectiveThreshold(game,threshold);
+  return YOKOSAWA_TIER_ORDER[Math.max(0,yokosawaTierIndex(effective)-2)];
+}
+function yokosawaFacingThreeBetAction(handTier,game,threshold){
+  if(handTier==='fold')return 'fold';
+  const opponent=yokosawaOpponentThreeBetThreshold(game,threshold);
+  const handIndex=yokosawaTierIndex(handTier);
+  const opponentIndex=yokosawaTierIndex(opponent);
+  if(handIndex<=opponentIndex-2)return 'fourbet';
+  if(handIndex<=opponentIndex)return 'call';
+  return 'fold';
+}
+function yokosawaActionLabel(action){
+  return action==='fourbet'?'4BET':action==='call'?'CALL':'FOLD';
+}
+function renderYokosawaControls(){
+  const game=uiState.yokosawaGame||'ring';
+  const situation=uiState.yokosawaSituation||'firstIn';
+  document.querySelectorAll('[data-yokosawa-game]').forEach(button=>button.classList.toggle('active',button.dataset.yokosawaGame===game));
+  document.querySelectorAll('[data-yokosawa-situation]').forEach(button=>button.classList.toggle('active',button.dataset.yokosawaSituation===situation));
+  const select=document.getElementById('yokosawaThreshold');
+  const pinkOption=select.querySelector('option[value="pink"]');
+  pinkOption.disabled=situation==='facing3bet';
+  if(situation==='facing3bet'&&(uiState.yokosawaThreshold||'green')==='pink'){
+    uiState.yokosawaThreshold='purple';
+    saveUiState();
+  }
+  select.value=uiState.yokosawaThreshold||'green';
+  document.getElementById('yokosawaThresholdField').childNodes[0].nodeValue=
+    situation==='facing3bet'?'自分がオープンした基準 ':'参加基準 ';
+  document.getElementById('yokosawaTournamentWarning').classList.toggle('hidden',game!=='tournament');
+  const effective=yokosawaEffectiveThreshold(game,select.value);
+  const opponent=yokosawaOpponentThreeBetThreshold(game,select.value);
+  document.getElementById('yokosawaSummaryTitle').textContent=`${game==='ring'?'リング':'トーナメント'}・${situation==='firstIn'?'First in':'3BET対応'}`;
+  document.getElementById('yokosawaSummaryText').textContent=situation==='firstIn'
+    ?game==='ring'
+      ?`100BB・アンティなし。${YOKOSAWA_TIER_META[effective].label}以上を参加候補として表示します。`
+      :`アンティありとして基準を1ランク広げ、${YOKOSAWA_TIER_META[effective].label}以上を参加候補として表示します。`
+    :`自分は${YOKOSAWA_TIER_META[effective].label}までオープン。相手の3BET下限を${YOKOSAWA_TIER_META[opponent].label}と推定します。`;
+}
+function renderYokosawaFirstIn(game,threshold){
+  const effective=yokosawaEffectiveThreshold(game,threshold);
+  const thresholdIndex=yokosawaTierIndex(effective);
+  document.getElementById('rangePageTitle').textContent=`ヨコサワ式 ${game==='ring'?'リング':'トーナメント'} First in`;
+  document.getElementById('rangeContextBadge').textContent=`ヨコサワ式・${game==='ring'?'リング':'トーナメント'}`;
+  document.getElementById('rangeActionBadge').classList.remove('hidden','shove');
+  document.getElementById('rangeActionBadge').textContent=YOKOSAWA_TIER_META[effective].short;
+  document.getElementById('rangeContextDescription').textContent=game==='ring'?'100BB・アンティなし':'アンティあり・40BB以上の簡易応用';
+  document.getElementById('rangeLegend').innerHTML=YOKOSAWA_TIER_ORDER.map(tier=>`<span><i class="dot yokosawa-${tier}"></i>${YOKOSAWA_TIER_META[tier].short}</span>`).join('');
+  document.getElementById('rangeGrid').innerHTML=ranks.flatMap((_,row)=>ranks.map((__,col)=>{
+    const hand=handLabel(row,col),tier=yokosawaTierByHand[hand]||'fold';
+    const active=tier!=='fold'&&yokosawaTierIndex(tier)<=thresholdIndex;
+    return `<button class="hand-cell yokosawa-cell yokosawa-${tier} ${active?'yokosawa-active':'yokosawa-below'}" title="${hand}：${YOKOSAWA_TIER_META[tier].label}">${hand}</button>`;
+  })).join('');
+  document.getElementById('rangeHint').textContent=game==='ring'
+    ?'選択した「後ろの人数」の色以上を、First inの参加候補として強調しています。'
+    :'アンティゲームへの公開応用ルールとして、リングより参加基準を1ランク広げています。';
+  document.getElementById('rangeAssumptionContent').innerHTML=`<dl>
+    <div><dt>ゲーム</dt><dd>${game==='ring'?'リング・100BB・アンティなし':'トーナメント・アンティあり・40BB以上'}</dd></div>
+    <div><dt>元の基準</dt><dd>${YOKOSAWA_TIER_META[threshold].label}</dd></div>
+    <div><dt>適用基準</dt><dd>${YOKOSAWA_TIER_META[effective].label}${game==='tournament'?'（1ランク広げる）':''}</dd></div>
+    <div><dt>注意</dt><dd>${game==='tournament'?'25BB以下や強いICM局面には非対応です。':'レーキや相手傾向に応じて調整してください。'}</dd></div>
+  </dl><p>公開情報をPoker Mate用に再構成した非公式表示です。</p>`;
+}
+function renderYokosawaFacingThreeBet(game,threshold){
+  const effective=yokosawaEffectiveThreshold(game,threshold);
+  const opponent=yokosawaOpponentThreeBetThreshold(game,threshold);
+  document.getElementById('rangePageTitle').textContent=`ヨコサワ式 ${game==='ring'?'リング':'トーナメント'} 3BET対応`;
+  document.getElementById('rangeContextBadge').textContent=`${game==='ring'?'リング':'トーナメント'}・vs 3BET`;
+  document.getElementById('rangeActionBadge').classList.remove('hidden','shove');
+  document.getElementById('rangeActionBadge').textContent='4BET / CALL';
+  document.getElementById('rangeContextDescription').textContent=`自分のオープン下限 ${YOKOSAWA_TIER_META[effective].short} → 相手3BET下限 ${YOKOSAWA_TIER_META[opponent].short}`;
+  document.getElementById('rangeLegend').innerHTML='<span><i class="dot yokosawa-fourbet-dot"></i>4BET</span><span><i class="dot yokosawa-call-dot"></i>CALL</span><span><i class="dot yokosawa-fold-dot"></i>FOLD</span>';
+  document.getElementById('rangeGrid').innerHTML=ranks.flatMap((_,row)=>ranks.map((__,col)=>{
+    const hand=handLabel(row,col),tier=yokosawaTierByHand[hand]||'fold';
+    const action=yokosawaFacingThreeBetAction(tier,game,threshold);
+    return `<button class="hand-cell yokosawa-response-cell yokosawa-action-${action}" title="${hand}：${YOKOSAWA_TIER_META[tier].label} → ${yokosawaActionLabel(action)}">${hand}<small>${yokosawaActionLabel(action)}</small></button>`;
+  })).join('');
+  document.getElementById('rangeHint').textContent='自分のオープン下限より2ランク強い色を相手の3BET下限と推定。同ランク・1ランク上はコール、2ランク以上上は4BET、下はフォールドです。';
+  document.getElementById('rangeAssumptionContent').innerHTML=`<dl>
+    <div><dt>自分の範囲</dt><dd>${YOKOSAWA_TIER_META[effective].label}までオープン</dd></div>
+    <div><dt>相手の推定</dt><dd>${YOKOSAWA_TIER_META[opponent].label}以上で3BET</dd></div>
+    <div><dt>コール</dt><dd>相手の下限と同じ色、または1ランク強い色</dd></div>
+    <div><dt>4BET</dt><dd>相手の下限より2ランク以上強い色</dd></div>
+    <div><dt>フォールド</dt><dd>相手の推定3BET下限より弱い色</dd></div>
+  </dl><p>サイズ、ポジション、レーキ、ICMを省略した初心者向け簡易判断です。</p>`;
+}
 function renderYokosawaRange(){
- const threshold=uiState.yokosawaThreshold||'green';
- const thresholdIndex=YOKOSAWA_TIER_ORDER.indexOf(threshold);
- document.getElementById('rangePageTitle').textContent='ヨコサワ式 ハンドランク表';
- document.getElementById('rangeContextBadge').textContent='ヨコサワ式・公開版再構成';
- document.getElementById('rangeActionBadge').classList.remove('hidden','shove');
- document.getElementById('rangeActionBadge').textContent=YOKOSAWA_TIER_META[threshold].short;
- document.getElementById('rangeContextDescription').textContent='100BB・アンティなし／後ろの人数で参加基準を選択';
- document.getElementById('rangePositionTabs').classList.add('hidden');
- document.getElementById('rangeLegend').innerHTML=YOKOSAWA_TIER_ORDER.map(tier=>`<span><i class="dot yokosawa-${tier}"></i>${YOKOSAWA_TIER_META[tier].short}</span>`).join('');
- document.getElementById('rangeGrid').innerHTML=ranks.flatMap((_,row)=>ranks.map((__,col)=>{
-   const hand=handLabel(row,col),tier=yokosawaTierByHand[hand]||'fold';
-   const active=tier!=='fold'&&YOKOSAWA_TIER_ORDER.indexOf(tier)<=thresholdIndex;
-   return `<button class="hand-cell yokosawa-cell yokosawa-${tier} ${active?'yokosawa-active':'yokosawa-below'}" title="${hand}：${YOKOSAWA_TIER_META[tier].label}">${hand}</button>`;
- })).join('');
- document.getElementById('rangeHint').textContent=threshold==='pink'
-   ?'BBでBTNのレイズを受けた場面では、桃色までをコール候補とする簡易ルールです。'
-   :'選択した「後ろの人数」の色以上を、First inの参加候補として強調しています。';
- document.getElementById('rangeAssumptionContent').innerHTML=`<dl>
-   <div><dt>想定</dt><dd>100BB・アンティなし。公開された色ランクを独自再構成。</dd></div>
-   <div><dt>First in</dt><dd>自分の後ろに残る人数に対応する色以上を参加候補にします。</dd></div>
-   <div><dt>対レイズ</dt><dd>相手の下限色より1段上をコール、2段上を3ベットする簡易ルールです。</dd></div>
-   <div><dt>注意</dt><dd>マルチウェイでは1段タイト、アンティありでは1段ルースが目安です。</dd></div>
- </dl><p>非公式の再構成表示です。正確な説明は公式動画を確認してください。</p>`;
+  renderYokosawaControls();
+  const game=uiState.yokosawaGame||'ring';
+  const situation=uiState.yokosawaSituation||'firstIn';
+  const threshold=uiState.yokosawaThreshold||'green';
+  document.getElementById('rangePositionTabs').classList.add('hidden');
+  if(situation==='facing3bet')renderYokosawaFacingThreeBet(game,threshold);
+  else renderYokosawaFirstIn(game,threshold);
 }
 
 function rangeScenario(){
@@ -2211,6 +2322,18 @@ function rangeScenario(){
 function rangeScenarioKey(){const stack=currentRangeGame==='ring'?'100':currentRangeGame==='headsup'?currentHeadsUpStack:currentTournamentStack;return [currentRangeGame,stack,currentRangeMode,currentRangePosition,uiState.rangeTableSize,uiState.rangeAnte,uiState.rangeIcm,uiState.rangeOpenSize].join('|');}
 function rangeFrequencyForHand(hand,active){const custom=rangeFrequencyStore[rangeScenarioKey()]?.[hand];return Number.isFinite(custom)?custom:(active?100:0);}
 function cycleRangeFrequency(hand,active){const key=rangeScenarioKey(),cur=rangeFrequencyForHand(hand,active),seq=[0,25,50,75,100],next=seq[(seq.indexOf(cur)+1)%seq.length];rangeFrequencyStore[key]||={};rangeFrequencyStore[key][hand]=next;saveRangeFrequencyStore();}
+
+function pokerMateDefenseUsesAllIn(){
+  if(currentRangeGame==='tournament')return Number(currentTournamentStack)<=15;
+  if(currentRangeGame==='headsup')return Number(currentHeadsUpStack)<=15;
+  return false;
+}
+function pokerMateAggressiveAction(){
+  return pokerMateDefenseUsesAllIn()
+    ?{className:'shove',label:'オールイン',dotClass:'shove'}
+    :{className:'threebet',label:'3BET',dotClass:'threebet'};
+}
+
 function renderRangeAssumptions(s){const a=[];if(currentRangeGame!=='headsup'&&uiState.rangeTableSize==='9')a.push('9-max向けに下位境界を約8%タイト化');if(currentRangeGame==='tournament'&&uiState.rangeAnte==='none')a.push('アンティなしとして約5%タイト化');if(currentRangeGame==='tournament'&&uiState.rangeIcm==='bubble')a.push('バブル簡易補正');if(currentRangeGame==='tournament'&&uiState.rangeIcm==='final')a.push('FT簡易補正');if(currentRangeMode==='bb'&&num(uiState.rangeOpenSize)!==2.5)a.push(`${uiState.rangeOpenSize}BBオープン向けにディフェンス幅を簡易補正`);document.getElementById('rangeAssumptionContent').innerHTML=`<dl><div><dt>基準データ</dt><dd>${esc(s.source)}</dd></div><div><dt>現在の前提</dt><dd>${esc(s.context)}${currentRangeMode==='bb'?`・相手${uiState.rangeOpenSize}BBオープン`:''}</dd></div><div><dt>補正</dt><dd>${a.length?esc(a.join('／')):'なし（基準条件）'}</dd></div><div><dt>混合頻度</dt><dd>${rangeFrequencyEdit?'セルをタップして0→25→50→75→100%で編集できます。':'既定値は0%または100%。頻度編集で自分のソルバー値を登録できます。'}</dd></div></dl><p>GTOソルバーの生データではありません。レーキ、ICM、相手傾向で実戦レンジは変わります。</p>`;}
 function renderRangeGrid(){
  const source=uiState.rangeSource||'pokerMate';
@@ -2232,15 +2355,43 @@ function renderRangeGrid(){
   const set=adjustSetByPercent(s.rfi[currentRangePosition]||new Set(),adj),cls=currentRangeGame==='headsup'?(s.rfiAction.type==='shove'?'hu-shove':'hu-open'):(s.rfiAction?.type==='shove'?'hu-shove':'open');legend.innerHTML=currentRangeGame==='tournament'&&s.rfiAction.type==='mixed'?'<span><i class="dot open"></i>2BBオープン／オールイン混合</span><span><i class="dot fold"></i>フォールド</span>':currentRangeGame==='tournament'&&s.rfiAction.type==='shove'?'<span><i class="dot hu-shove-dot"></i>オールイン候補</span><span><i class="dot fold"></i>フォールド</span>':`<span><i class="dot ${cls==='hu-shove'?'hu-shove-dot':'open'}"></i>${currentRangeGame==='headsup'?s.rfiAction.label:'参加'}</span><span><i class="dot fold"></i>フォールド</span>`;hint.textContent=currentRangeGame==='tournament'&&s.rfiAction.type==='mixed'?'15BBはミンレイズとオールインが混在する参加候補です。':currentRangeGame==='tournament'&&s.rfiAction.type==='shove'?'10BBは主にオールイン候補です。ICMで調整してください。':'条件変更時は境界ハンドを簡易補正します。';
   document.getElementById('rangeGrid').innerHTML=ranks.flatMap((_,r)=>ranks.map((__,c)=>{const hand=handLabel(r,c),base=set.has(hand),freq=rangeFrequencyForHand(hand,base),active=freq>0,fl=freq>0&&freq<100?`<small>${freq}%</small>`:'';return `<button class="hand-cell ${active?cls:''} ${fl?'mixed-frequency':''}" data-range-hand="${hand}" data-default-active="${base?1:0}" style="--range-frequency:${freq/100}" title="${hand}：${freq}%">${hand}${fl}</button>`;})).join('');
  }else{
-  title.textContent=currentRangeGame==='ring'?'リング BBディフェンス':currentRangeGame==='headsup'?`ヘッズアップ ${currentHeadsUpStack}BB BBディフェンス`:`トーナメント ${currentTournamentStack}BB BBディフェンス`;legend.innerHTML='<span><i class="dot threebet"></i>3ベット／オールイン</span><span><i class="dot call"></i>コール</span><span><i class="dot fold"></i>フォールド</span>';hint.textContent=`相手の${uiState.rangeOpenSize}BBオープンを想定。サイズ変更時はコール境界を簡易補正します。`;const d=adjustDefenseForOpenSize(s.defense[currentRangePosition]||{threebet:new Set(),call:new Set()});document.getElementById('rangeGrid').innerHTML=ranks.flatMap((_,r)=>ranks.map((__,c)=>{const hand=handLabel(r,c),baseAction=d.threebet.has(hand)?'threebet':d.call.has(hand)?'call':'',base=!!baseAction,freq=rangeFrequencyForHand(hand,base),act=freq>0?(baseAction||'call'):'',fl=freq>0&&freq<100?`<small>${freq}%</small>`:'';return `<button class="hand-cell ${act} ${fl?'mixed-frequency':''}" data-range-hand="${hand}" data-default-active="${base?1:0}" style="--range-frequency:${freq/100}" title="${hand}：${act||'fold'} ${freq}%">${hand}${fl}</button>`;})).join('');
+  title.textContent=currentRangeGame==='ring'?'リング BBディフェンス':currentRangeGame==='headsup'?`ヘッズアップ ${currentHeadsUpStack}BB BBディフェンス`:`トーナメント ${currentTournamentStack}BB BBディフェンス`;
+  const aggressive=pokerMateAggressiveAction();
+  legend.innerHTML=`<span><i class="dot ${aggressive.dotClass}"></i>${aggressive.label}</span><span><i class="dot call"></i>コール</span><span><i class="dot fold"></i>フォールド</span>`;
+  hint.textContent=pokerMateDefenseUsesAllIn()
+    ?`相手の${uiState.rangeOpenSize}BBオープンを想定。赤はオールイン、黄はコールです。`
+    :`相手の${uiState.rangeOpenSize}BBオープンを想定。青は3BET、黄はコールです。`;
+  const d=adjustDefenseForOpenSize(s.defense[currentRangePosition]||{threebet:new Set(),call:new Set()});
+  document.getElementById('rangeGrid').innerHTML=ranks.flatMap((_,r)=>ranks.map((__,c)=>{
+    const hand=handLabel(r,c);
+    const baseAction=d.threebet.has(hand)?aggressive.className:d.call.has(hand)?'call':'';
+    const base=Boolean(baseAction);
+    const freq=rangeFrequencyForHand(hand,base);
+    const act=freq>0?(baseAction||'call'):'';
+    const fl=freq>0&&freq<100?`<small>${freq}%</small>`:'';
+    const actionLabel=act===aggressive.className?aggressive.label:act==='call'?'コール':'フォールド';
+    return `<button class="hand-cell ${act} ${fl?'mixed-frequency':''}" data-range-hand="${hand}" data-default-active="${base?1:0}" style="--range-frequency:${freq/100}" title="${hand}：${actionLabel} ${freq}%">${hand}${fl}</button>`;
+  })).join('');
  }
  renderRangeAssumptions(s);
 }
 document.querySelectorAll('[data-range-source]').forEach(button=>button.addEventListener('click',()=>{
- updateUiState({rangeSource:button.dataset.rangeSource});renderRangeGrid();
+  updateUiState({rangeSource:button.dataset.rangeSource});
+  renderRangeGrid();
+}));
+document.querySelectorAll('[data-yokosawa-game]').forEach(button=>button.addEventListener('click',()=>{
+  updateUiState({yokosawaGame:button.dataset.yokosawaGame});
+  renderRangeGrid();
+}));
+document.querySelectorAll('[data-yokosawa-situation]').forEach(button=>button.addEventListener('click',()=>{
+  const patch={yokosawaSituation:button.dataset.yokosawaSituation};
+  if(button.dataset.yokosawaSituation==='facing3bet'&&(uiState.yokosawaThreshold||'green')==='pink')patch.yokosawaThreshold='purple';
+  updateUiState(patch);
+  renderRangeGrid();
 }));
 document.getElementById('yokosawaThreshold').addEventListener('change',()=>{
- updateUiState({yokosawaThreshold:document.getElementById('yokosawaThreshold').value});renderRangeGrid();
+  updateUiState({yokosawaThreshold:document.getElementById('yokosawaThreshold').value});
+  renderRangeGrid();
 });
 document.querySelectorAll('[data-range-game]').forEach(b=>b.addEventListener('click',()=>{currentRangeGame=b.dataset.rangeGame;if(currentRangeGame==='headsup')currentRangePosition='BTN';updateUiState({rangeGame:currentRangeGame,rangePosition:currentRangePosition});renderRangeGrid();}));document.querySelectorAll('[data-tournament-stack]').forEach(b=>b.addEventListener('click',()=>{currentTournamentStack=b.dataset.tournamentStack;updateUiState({tournamentStack:currentTournamentStack});renderRangeGrid();}));document.querySelectorAll('[data-headsup-stack]').forEach(b=>b.addEventListener('click',()=>{currentHeadsUpStack=b.dataset.headsupStack;updateUiState({headsUpStack:currentHeadsUpStack});renderRangeGrid();}));document.querySelectorAll('[data-range-mode]').forEach(b=>b.addEventListener('click',()=>{currentRangeMode=b.dataset.rangeMode;updateUiState({rangeMode:currentRangeMode});renderRangeGrid();}));document.querySelectorAll('[data-position]').forEach(b=>b.addEventListener('click',()=>{if(b.classList.contains('hidden'))return;currentRangePosition=b.dataset.position;updateUiState({rangePosition:currentRangePosition});renderRangeGrid();}));['rangeTableSize','rangeAnte','rangeIcm','rangeOpenSize'].forEach(id=>document.getElementById(id).addEventListener('change',()=>{updateUiState({[id]:document.getElementById(id).value});renderRangeGrid();}));document.getElementById('toggleRangeFrequencyEdit').addEventListener('click',()=>{rangeFrequencyEdit=!rangeFrequencyEdit;updateUiState({rangeFrequencyEdit});renderRangeGrid();});document.getElementById('resetRangeFrequency').addEventListener('click',()=>{delete rangeFrequencyStore[rangeScenarioKey()];saveRangeFrequencyStore();renderRangeGrid();showToast('現在の条件の頻度をリセットしました');});document.getElementById('rangeGrid').addEventListener('click',e=>{const cell=e.target.closest('[data-range-hand]');if(!cell||!rangeFrequencyEdit)return;cycleRangeFrequency(cell.dataset.rangeHand,cell.dataset.defaultActive==='1');renderRangeGrid();});
 
@@ -2294,6 +2445,7 @@ function renderBetSizeReferenceTable(){
   const pot=Math.max(0,num(document.getElementById('oddsPot').value));
   const rake=currentRakeSettings();
   const sizes=[
+    {label:'1/4 pot',fraction:1/4},
     {label:'1/3 pot',fraction:1/3},
     {label:'1/2 pot',fraction:1/2},
     {label:'2/3 pot',fraction:2/3},
@@ -2499,7 +2651,7 @@ function stopEquityWorker(message=''){if(equityWorker){equityWorker.terminate();
 function setEquityProgress(processed,total){const percent=total?Math.min(100,processed/total*100):0;document.getElementById('equityProgressWrap').classList.remove('hidden');document.getElementById('equityProgressBar').style.width=`${percent}%`;document.getElementById('equityProgressPercent').textContent=`${percent.toFixed(0)}%`;document.getElementById('equityProgressText').textContent=`${processed.toLocaleString()} / ${total.toLocaleString()} 通り`;}
 function setPlayerEquity(prefix,p,total){document.getElementById(`${prefix}Equity`).textContent=formatEquityPercent(p.equityShare/total*100);document.getElementById(`${prefix}Win`).textContent=formatEquityPercent(p.wins/total*100);document.getElementById(`${prefix}Tie`).textContent=formatEquityPercent(p.ties/total*100);}
 function renderExactEquityResult(result){setPlayerEquity('hero',result.players[0],result.total);setPlayerEquity('villain',result.players[1],result.total);if(result.players[2])setPlayerEquity('player3',result.players[2],result.total);const heroEq=result.players[0].equityShare/result.total*100;document.getElementById('equityResult').innerHTML=`Player 1のエクイティ <strong>${formatEquityPercent(heroEq)}</strong><div class="equity-meter"><div class="equity-meter-fill" style="width:${heroEq}%"></div></div><div class="exact-count-grid">${result.players.map((p,i)=>`<span><small>P${i+1}</small><strong>${formatEquityPercent(p.equityShare/result.total*100)}</strong></span>`).join('')}</div>`;document.getElementById('equityMethod').textContent=`${result.modeLabel}を全${result.total.toLocaleString()}通り完全列挙しました。乱数は使用していません。複数人の同着は等分します。`;}
-function calculateEquityNow(){const input=equityInput(),resultEl=document.getElementById('equityResult');if(input.error){resultEl.innerHTML=`<span class="negative">${input.error}</span>`;return;}if(typeof Worker==='undefined'){resultEl.innerHTML='<span class="negative">このブラウザはWeb Workerに対応していません。</span>';return;}stopEquityWorker();resetEquityStats();document.getElementById('calculateEquityBtn').disabled=true;resultEl.textContent='完全列挙を開始しています…';document.getElementById('equityProgressBar').style.width='0%';document.getElementById('equityProgressPercent').textContent='0%';document.getElementById('equityProgressText').textContent='有効な組み合わせを準備しています';document.getElementById('equityProgressWrap').classList.remove('hidden');equityWorker=new Worker('./equity-worker.js?v=7.0.0');equityWorker.onmessage=e=>{const msg=e.data;if(msg.type==='progress'){setEquityProgress(msg.processed,msg.total);return;}if(msg.type==='result'){renderExactEquityResult(msg);stopEquityWorker();return;}if(msg.type==='error'){const text=msg.code==='CALCULATION_TOO_LARGE'?'正確な計算が2,000万通りを超えます。レンジを狭くするか、ターン／リバーを指定してください。':msg.message;resultEl.innerHTML=`<span class="negative">${esc(text)}</span>`;stopEquityWorker('入力条件を軽くして再計算してください。');}};equityWorker.onerror=()=>{resultEl.innerHTML='<span class="negative">完全計算中にエラーが発生しました。</span>';stopEquityWorker('計算を中止しました。');};equityWorker.postMessage(input);}
+function calculateEquityNow(){const input=equityInput(),resultEl=document.getElementById('equityResult');if(input.error){resultEl.innerHTML=`<span class="negative">${input.error}</span>`;return;}if(typeof Worker==='undefined'){resultEl.innerHTML='<span class="negative">このブラウザはWeb Workerに対応していません。</span>';return;}stopEquityWorker();resetEquityStats();document.getElementById('calculateEquityBtn').disabled=true;resultEl.textContent='完全列挙を開始しています…';document.getElementById('equityProgressBar').style.width='0%';document.getElementById('equityProgressPercent').textContent='0%';document.getElementById('equityProgressText').textContent='有効な組み合わせを準備しています';document.getElementById('equityProgressWrap').classList.remove('hidden');equityWorker=new Worker('./equity-worker.js?v=8.1.1');equityWorker.onmessage=e=>{const msg=e.data;if(msg.type==='progress'){setEquityProgress(msg.processed,msg.total);return;}if(msg.type==='result'){renderExactEquityResult(msg);stopEquityWorker();return;}if(msg.type==='error'){const text=msg.code==='CALCULATION_TOO_LARGE'?'正確な計算が2,000万通りを超えます。レンジを狭くするか、ターン／リバーを指定してください。':msg.message;resultEl.innerHTML=`<span class="negative">${esc(text)}</span>`;stopEquityWorker('入力条件を軽くして再計算してください。');}};equityWorker.onerror=()=>{resultEl.innerHTML='<span class="negative">完全計算中にエラーが発生しました。</span>';stopEquityWorker('計算を中止しました。');};equityWorker.postMessage(input);}
 document.getElementById('calculateEquityBtn').addEventListener('click',calculateEquityNow);document.getElementById('cancelEquityBtn').addEventListener('click',()=>{stopEquityWorker('計算を中止しました。');document.getElementById('equityResult').textContent='計算を中止しました。';});document.getElementById('resetEquityBtn').addEventListener('click',()=>{stopEquityWorker();equityCards={hero:[null,null],villain:[null,null],player3:[null,null],board:[null,null,null,null,null]};document.getElementById('equityHeroMode').value='fixed';document.getElementById('equityVillainMode').value='random';updateUiState({equityHeroMode:'fixed',equityVillainMode:'random',equityPlayer3:false});resetEquityStats();renderVisualCards();});document.getElementById('randomVillainBtn').addEventListener('click',()=>{stopEquityWorker();equityCards.villain=[null,null];document.getElementById('equityVillainMode').value='random';updateUiState({equityVillainMode:'random'});resetEquityStats();renderVisualCards();showToast('Player 2をランダムに戻しました');});document.getElementById('togglePlayer3Btn').addEventListener('click',()=>{const enabled=!uiState.equityPlayer3;if(!enabled)equityCards.player3=[null,null];updateUiState({equityPlayer3:enabled});resetEquityStats();renderVisualCards();});['equityHeroMode','equityVillainMode'].forEach(id=>document.getElementById(id).addEventListener('change',()=>{const hm=document.getElementById('equityHeroMode').value,vm=document.getElementById('equityVillainMode').value;if(hm!=='fixed')equityCards.hero=[null,null];if(vm!=='fixed')equityCards.villain=[null,null];updateUiState({equityHeroMode:hm,equityVillainMode:vm});resetEquityStats();renderVisualCards();}));
 function resetEquityStats(){['heroEquity','heroWin','heroTie','villainEquity','villainWin','villainTie','player3Equity','player3Win','player3Tie'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='—';});document.getElementById('equityResult').textContent='ハンドまたはレンジとボードを指定してください。';document.getElementById('equityMethod').textContent='指定ハンド同士はプリフロップから完全列挙。ランダム・レンジはフロップ以降、3人ポットは全員指定ハンドに対応します。';updateEquityEstimate();}
 
@@ -2615,16 +2767,24 @@ function renderPower(){
   const required=m*behind;
   const selectedHand=canonicalHandFromCards(pnCards);
   const selectedPn=pnForHand(selectedHand);
-  const firstIn=document.getElementById('pnFirstIn').checked,icmMode=document.getElementById('pnIcmMode').value,applicable=firstIn,selectedOk=Boolean(selectedHand)&&selectedPn>=required;
-  document.getElementById('pnScopeStatus').textContent=!applicable?'適用外':icmMode==='icm'?'参考値':'適用条件内';document.getElementById('pnScopeStatus').className=`summary-badge ${!applicable?'negative':icmMode==='icm'?'warning':''}`;
+  const icmMode=document.getElementById('pnIcmMode').value;
+  const selectedOk=Boolean(selectedHand)&&selectedPn>=required;
+  document.getElementById('pnScopeStatus').textContent=icmMode==='icm'?'ICM参考値':'chipEV';
+  document.getElementById('pnScopeStatus').className=`summary-badge ${icmMode==='icm'?'warning':''}`;
 
   document.getElementById('pnMValue').textContent=m.toFixed(2);
   document.getElementById('pnThresholdLabel').textContent=required.toFixed(1);
   document.getElementById('pnHandValue').textContent=selectedHand?pnDisplayValue(selectedPn):'—';
-  document.getElementById('pnDecision').textContent=!applicable?'適用外':selectedHand?(icmMode==='icm'?(selectedOk?'参考候補':'参考見送り'):(selectedOk?'候補':'見送り')):'未選択';
-  document.getElementById('pnDecision').className=!applicable?'negative':selectedHand?(selectedOk?'positive':'negative'):'';
+  document.getElementById('pnDecision').textContent=selectedHand
+    ?icmMode==='icm'
+      ?(selectedOk?'参考候補':'参考見送り')
+      :(selectedOk?'候補':'見送り')
+    :'未選択';
+  document.getElementById('pnDecision').className=selectedHand?(selectedOk?'positive':'negative'):'';
 
-  document.getElementById('pnResult').textContent=!applicable?'パワーナンバーは全員フォールドで自分がFirst inの場面に限る簡易指標です。':selectedHand?`${selectedHand}：${selectedOk?'必要PN以上':'必要PN未満'}${icmMode==='icm'?'（ICMでは参考値）':''}`:'白枠のハンドが必要PN以上です。';
+  document.getElementById('pnResult').textContent=selectedHand
+    ?`${selectedHand}：${selectedOk?'必要PN以上':'必要PN未満'}${icmMode==='icm'?'（ICMでは参考値）':''}`
+    :'白枠のハンドが必要PN以上です。';
 
   let qualifiedCount=0;
   const selected=canonicalHandFromCards(pnCards);
@@ -2648,7 +2808,7 @@ function renderPower(){
   document.getElementById('pnQualifiedCount').textContent=`${qualifiedCount} / 169`;
   document.getElementById('pnGrid').innerHTML=cells.join('');
 }
-['pnStack','pnSb','pnBb','pnAnteTotal','pnBehind','pnFirstIn','pnIcmMode'].forEach(id=>document.getElementById(id).addEventListener('input',renderPower));
+['pnStack','pnSb','pnBb','pnAnteTotal','pnBehind','pnIcmMode'].forEach(id=>document.getElementById(id).addEventListener('input',renderPower));
 document.getElementById('pnGrid').addEventListener('click',e=>{
   const b=e.target.closest('[data-pn-hand]');if(!b)return;selectedPnHand=b.dataset.pnHand;pnCards=representativeCardsForHand(selectedPnHand);renderVisualCards();renderPower();
 });

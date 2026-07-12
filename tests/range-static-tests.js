@@ -3,6 +3,7 @@ const fs=require('fs');
 const path=require('path');
 const app=fs.readFileSync(path.join(__dirname,'..','app.js'),'utf8');
 const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
+const css=fs.readFileSync(path.join(__dirname,'..','styles.css'),'utf8');
 
 const tournamentStacks=['100','80','60','40','25','15','10'];
 for(const stack of tournamentStacks){
@@ -59,3 +60,22 @@ if(!app.includes('tournamentActionForStack'))throw new Error('missing tournament
 if(!html.includes('data-range-source="yokosawa"'))throw new Error('missing Yokosawa source');
 if(!app.includes('const YOKOSAWA_TIER_ROWS'))throw new Error('missing Yokosawa chart');
 if(!app.includes('renderYokosawaRange'))throw new Error('missing Yokosawa renderer');
+
+
+if(!html.includes('data-yokosawa-game="ring"'))throw new Error('missing Yokosawa ring button');
+if(!html.includes('data-yokosawa-game="tournament"'))throw new Error('missing Yokosawa tournament button');
+if(!html.includes('data-yokosawa-situation="firstIn"'))throw new Error('missing Yokosawa first-in button');
+if(!html.includes('data-yokosawa-situation="facing3bet"'))throw new Error('missing Yokosawa facing-3bet button');
+if(!html.includes('id="yokosawaTournamentWarning"'))throw new Error('missing tournament warning');
+for(const name of ['yokosawaEffectiveThreshold','yokosawaOpponentThreeBetThreshold','yokosawaFacingThreeBetAction','renderYokosawaFacingThreeBet']){
+  if(!app.includes(`function ${name}`))throw new Error(`missing ${name}`);
+}
+if(!app.includes("yokosawaGame:'ring'"))throw new Error('missing Yokosawa game default');
+if(!app.includes("yokosawaSituation:'firstIn'"))throw new Error('missing Yokosawa situation default');
+
+
+if(!app.includes('function pokerMateDefenseUsesAllIn'))throw new Error('missing all-in depth detection');
+if(!app.includes("className:'shove'"))throw new Error('missing red all-in action class');
+if(!app.includes("className:'threebet'"))throw new Error('missing blue 3bet action class');
+if(!css.includes('.hand-cell.shove'))throw new Error('missing red all-in CSS');
+if(!css.includes('.hand-cell.threebet'))throw new Error('missing blue 3bet CSS');
