@@ -2,9 +2,9 @@ const assert=require('assert');const fs=require('fs');const vm=require('vm');con
 const Core=require('../core-utils.js');
 function close(a,b,epsilon=1e-9){assert(Math.abs(a-b)<epsilon,`${a} != ${b}`)}
 const local=new Date(2026,6,12,0,30);assert.strictEqual(Core.localDateString(local),'2026-07-12');assert(Core.isValidIsoDate('2026-02-28'));assert(!Core.isValidIsoDate('2026-02-30'));
-let odds=Core.calculateBetOdds({pot:100,bet:50,call:50});close(odds.need,25);assert.strictEqual(odds.finalPot,200);
+let odds=Core.calculateBetOdds({pot:100,bet:50,call:50});close(odds.need,25);assert.strictEqual(odds.finalPot,200);let oddsRake=Core.calculateBetOdds({pot:100,bet:50,call:50,rakePct:10,rakeCap:15});assert.strictEqual(oddsRake.rake,15);close(oddsRake.need,50/185*100);
 let raise=Core.calculateRaiseOdds({pot:100,ownBet:50,raiseTo:150});close(raise.need,25);assert.strictEqual(raise.call,100);assert.strictEqual(raise.finalPot,400);
-let draw=Core.calculateDrawOdds({street:'flop',outs:9});close(draw.next,9/47*100);close(draw.byRiver,(1-(38/47)*(37/46))*100);assert.strictEqual(draw.outs,9);
+let draw=Core.calculateDrawOdds({street:'flop',outs:9});close(draw.next,9/47*100);close(draw.byRiver,(1-(38/47)*(37/46))*100);assert.strictEqual(draw.outs,9);let dirtyDraw=Core.calculateDrawOdds({street:'flop',outs:9,dirtyOuts:2});assert.strictEqual(dirtyDraw.rawOuts,9);assert.strictEqual(dirtyDraw.outs,7);
 close(Core.calculateDurationHours('10:00','14:30'),4.5);
 close(Core.calculateDurationHours('23:30','01:00'),1.5);
 assert.strictEqual(Core.calculateDurationHours('invalid','01:00'),0);

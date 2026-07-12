@@ -1,7 +1,7 @@
 {
   "name": "Poker Mate - ポーカー収支・学習ツール",
   "short_name": "Poker Mate",
-  "description": "オープンサイズとオールインを明示したヘッズアップレンジ、トーナメントレンジ、セッション分析、完全勝率計算を備えたポーカーPWA",
+  "description": "条件・頻度を編集できるプリフロップレンジ、レンジ対レンジと3人ポットの完全勝率計算、レーキ込みオッズ、危険アウツ、収支分析を備えたポーカーPWA",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

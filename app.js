@@ -1,11 +1,27 @@
 'use strict';
 
-const APP_VERSION = '6.1.3';
+const APP_VERSION = '7.0.0';
 const APP_CHANGELOG = [
+  {
+    version:'7.0.0',
+    title:'ポーカーツールの精度と適用条件を刷新',
+    current:true,
+    changes:[
+      'レンジへ卓人数・アンティ・ICM・相手オープンサイズの条件設定を追加',
+      'レンジの基準データと簡易補正内容を画面内へ明記',
+      'ハンドごとの0・25・50・75・100%頻度編集を追加',
+      '15BBと10BBトーナメントの基準アクションを明確化',
+      'オッズ計算へレーキ率と上限を追加',
+      'アウツ計算へ危険アウツの差し引きを追加',
+      'パワーナンバーへFirst inとICM適用条件を追加',
+      '勝率計算へ相手レンジ・レンジ対レンジ・3人ポットを追加',
+      '完全計算の対応条件と概算計算量を表示'
+    ]
+  },
   {
     version:'6.1.3',
     title:'ヘッズアップの基準アクションを明示',
-    current:true,
+    current:false,
     changes:[
       'ヘッズアップの各スタックにオープンまたはオールインを明記',
       '40BB・30BBを2.5BBオープンとして表示',
@@ -728,7 +744,15 @@ function loadUiState(){
     headsUpStack:'20',
     rangeMode:'rfi',
     rangePosition:'UTG',
+    rangeTableSize:'6',
+    rangeAnte:'bb',
+    rangeIcm:'chip',
+    rangeOpenSize:'2.5',
+    rangeFrequencyEdit:false,
     oddsMode:'bet',
+    equityHeroMode:'fixed',
+    equityVillainMode:'random',
+    equityPlayer3:false,
     reportMode:'month',
     reportPeriod:''
   };
@@ -765,7 +789,7 @@ let currentRangeMode = ['rfi','bb'].includes(uiState.rangeMode)
   :'rfi';
 let selectedPnHand = null;
 let pnCards = [null,null];
-let equityCards = {hero:[null,null],villain:[null,null],board:[null,null,null,null,null]};
+let equityCards = {hero:[null,null],villain:[null,null],player3:[null,null],board:[null,null,null,null,null]};
 let equityWorker = null;
 let activeCardTarget = null;
 let deferredInstallPrompt = null;
@@ -2062,209 +2086,43 @@ function handLabel(row,col){
   if(row===col)return ranks[row]+ranks[col];
   return row<col?`${ranks[row]}${ranks[col]}s`:`${ranks[col]}${ranks[row]}o`;
 }
+const RANGE_FREQUENCY_KEY='pokerMateRangeFrequenciesV1';
+let rangeFrequencyStore=loadRangeFrequencyStore();
+let rangeFrequencyEdit=Boolean(uiState.rangeFrequencyEdit);
+function loadRangeFrequencyStore(){try{const v=JSON.parse(localStorage.getItem(RANGE_FREQUENCY_KEY));return v&&typeof v==='object'?v:{}}catch(e){return {}}}
+function saveRangeFrequencyStore(){localStorage.setItem(RANGE_FREQUENCY_KEY,JSON.stringify(rangeFrequencyStore));}
+function rankValueForHand(rank){return {A:14,K:13,Q:12,J:11,T:10,'9':9,'8':8,'7':7,'6':6,'5':5,'4':4,'3':3,'2':2}[rank]||0;}
+function handStrengthScore(hand){if(!hand)return 0;const a=rankValueForHand(hand[0]),b=rankValueForHand(hand[1]);if(hand.length===2)return 80+a*4;const suited=hand.endsWith('s'),gap=Math.max(0,Math.abs(a-b)-1);return a*5+b*2+(suited?8:0)-gap*3+(a===14?5:0);}
+function adjustSetByPercent(base,percent){const set=new Set(base||[]);if(!percent)return set;if(percent>0){const count=Math.round(set.size*percent/100);[...set].sort((a,b)=>handStrengthScore(a)-handStrengthScore(b)).slice(0,count).forEach(h=>set.delete(h));}else{const count=Math.round((169-set.size)*Math.abs(percent)/100);[...allStartingHands].filter(h=>!set.has(h)).sort((a,b)=>handStrengthScore(b)-handStrengthScore(a)).slice(0,count).forEach(h=>set.add(h));}return set;}
+function currentRangeAdjustment(){if(currentRangeGame==='headsup')return 0;let a=0;if(uiState.rangeTableSize==='9')a+=8;if(currentRangeGame==='tournament'&&uiState.rangeAnte==='none')a+=5;if(currentRangeGame==='tournament'&&uiState.rangeIcm==='bubble')a+=8;if(currentRangeGame==='tournament'&&uiState.rangeIcm==='final')a+=12;return a;}
+function adjustDefenseForOpenSize(defense){const size=num(uiState.rangeOpenSize||2.5),threebet=new Set(defense?.threebet||[]);let call=new Set(defense?.call||[]);const sizeAdj=size<=2?-14:size<=2.2?-7:size<=2.5?0:size<=3?11:24;call=adjustSetByPercent(call,sizeAdj);const cond=currentRangeAdjustment();if(cond>0)call=adjustSetByPercent(call,cond);threebet.forEach(h=>call.delete(h));return {threebet,call};}
+function tournamentActionForStack(stack){const v=Number(stack);if(v<=10)return {type:'shove',label:'ALL-IN候補'};if(v===15)return {type:'mixed',label:'2BB OPEN / ALL-IN混合'};return {type:'open',label:'RFI'};}
 function rangeScenario(){
-  if(currentRangeGame==='ring'){
-    return {
-      gameLabel:'リング',
-      stackLabel:'100BB',
-      context:'6-max・100BBの標準的な学習用レンジ',
-      positions:['UTG','HJ','CO','BTN','SB'],
-      rfi:ranges,
-      defense:bbDefenseRanges
-    };
-  }
-  if(currentRangeGame==='headsup'){
-    const stack=currentHeadsUpStack;
-    const action=headsUpActionConfig[stack];
-    return {
-      gameLabel:'ヘッズアップ',
-      stackLabel:`${stack}BB`,
-      context:`BTN/SB対BB・${stack}BB・基準アクション ${action.label}`,
-      positions:['BTN'],
-      rfi:headsUpRfiRanges[stack],
-      defense:headsUpBbDefenseRanges[stack],
-      rfiAction:action
-    };
-  }
-  const stack=currentTournamentStack;
-  return {
-    gameLabel:'トーナメント',
-    stackLabel:`${stack}BB`,
-    context:`アンティあり・6-max・${stack}BBのchipEV学習用レンジ`,
-    positions:['UTG','HJ','CO','BTN','SB'],
-    rfi:tournamentRfiRanges[stack],
-    defense:tournamentBbDefenseRanges[stack]
-  };
+  if(currentRangeGame==='ring')return {gameLabel:'リング',stackLabel:'100BB',context:'6-max・100BBの学習用固定レンジ',positions:['UTG','HJ','CO','BTN','SB'],rfi:ranges,defense:bbDefenseRanges,source:'Poker Mate学習用固定レンジ（ソルバー出力ではありません）'};
+  if(currentRangeGame==='headsup'){const stack=currentHeadsUpStack,action=headsUpActionConfig[stack];return {gameLabel:'ヘッズアップ',stackLabel:`${stack}BB`,context:`BTN/SB対BB・${stack}BB・基準アクション ${action.label}`,positions:['BTN'],rfi:headsUpRfiRanges[stack],defense:headsUpBbDefenseRanges[stack],rfiAction:action,source:'Poker Mate学習用ヘッズアップ簡易モデル（リンプ・混合頻度を単純化）'};}
+  const stack=currentTournamentStack;return {gameLabel:'トーナメント',stackLabel:`${stack}BB`,context:`${uiState.rangeTableSize}-max・${uiState.rangeAnte==='bb'?'BBアンティ':'アンティなし'}・${uiState.rangeIcm==='chip'?'chipEV':uiState.rangeIcm==='bubble'?'バブル補正':'FT補正'}`,positions:['UTG','HJ','CO','BTN','SB'],rfi:tournamentRfiRanges[stack],defense:tournamentBbDefenseRanges[stack],rfiAction:tournamentActionForStack(stack),source:'Poker Mate学習用トーナメント簡易モデル（100〜60BBと条件差は補間・簡易補正）'};
 }
+function rangeScenarioKey(){const stack=currentRangeGame==='ring'?'100':currentRangeGame==='headsup'?currentHeadsUpStack:currentTournamentStack;return [currentRangeGame,stack,currentRangeMode,currentRangePosition,uiState.rangeTableSize,uiState.rangeAnte,uiState.rangeIcm,uiState.rangeOpenSize].join('|');}
+function rangeFrequencyForHand(hand,active){const custom=rangeFrequencyStore[rangeScenarioKey()]?.[hand];return Number.isFinite(custom)?custom:(active?100:0);}
+function cycleRangeFrequency(hand,active){const key=rangeScenarioKey(),cur=rangeFrequencyForHand(hand,active),seq=[0,25,50,75,100],next=seq[(seq.indexOf(cur)+1)%seq.length];rangeFrequencyStore[key]||={};rangeFrequencyStore[key][hand]=next;saveRangeFrequencyStore();}
+function renderRangeAssumptions(s){const a=[];if(currentRangeGame!=='headsup'&&uiState.rangeTableSize==='9')a.push('9-max向けに下位境界を約8%タイト化');if(currentRangeGame==='tournament'&&uiState.rangeAnte==='none')a.push('アンティなしとして約5%タイト化');if(currentRangeGame==='tournament'&&uiState.rangeIcm==='bubble')a.push('バブル簡易補正');if(currentRangeGame==='tournament'&&uiState.rangeIcm==='final')a.push('FT簡易補正');if(currentRangeMode==='bb'&&num(uiState.rangeOpenSize)!==2.5)a.push(`${uiState.rangeOpenSize}BBオープン向けにディフェンス幅を簡易補正`);document.getElementById('rangeAssumptionContent').innerHTML=`<dl><div><dt>基準データ</dt><dd>${esc(s.source)}</dd></div><div><dt>現在の前提</dt><dd>${esc(s.context)}${currentRangeMode==='bb'?`・相手${uiState.rangeOpenSize}BBオープン`:''}</dd></div><div><dt>補正</dt><dd>${a.length?esc(a.join('／')):'なし（基準条件）'}</dd></div><div><dt>混合頻度</dt><dd>${rangeFrequencyEdit?'セルをタップして0→25→50→75→100%で編集できます。':'既定値は0%または100%。頻度編集で自分のソルバー値を登録できます。'}</dd></div></dl><p>GTOソルバーの生データではありません。レーキ、ICM、相手傾向で実戦レンジは変わります。</p>`;}
 function renderRangeGrid(){
-  const scenario=rangeScenario();
-
-  if(!scenario.positions.includes(currentRangePosition)){
-    currentRangePosition=scenario.positions[0];
-    updateUiState({rangePosition:currentRangePosition});
-  }
-
-  document.querySelectorAll('[data-range-game]').forEach(button=>{
-    button.classList.toggle('active',button.dataset.rangeGame===currentRangeGame);
-  });
-  document.getElementById('tournamentStackSelector').classList.toggle('hidden',currentRangeGame!=='tournament');
-  document.getElementById('headsUpStackSelector').classList.toggle('hidden',currentRangeGame!=='headsup');
-  document.querySelectorAll('[data-tournament-stack]').forEach(button=>{
-    button.classList.toggle('active',button.dataset.tournamentStack===currentTournamentStack);
-  });
-  document.querySelectorAll('[data-headsup-stack]').forEach(button=>{
-    button.classList.toggle('active',button.dataset.headsupStack===currentHeadsUpStack);
-  });
-  document.querySelectorAll('[data-range-mode]').forEach(button=>{
-    button.classList.toggle('active',button.dataset.rangeMode===currentRangeMode);
-  });
-  document.querySelectorAll('[data-position]').forEach(button=>{
-    const position=button.dataset.position;
-    const visible=scenario.positions.includes(position);
-    button.classList.toggle('hidden',!visible);
-    button.classList.toggle('active',visible&&position===currentRangePosition);
-    if(currentRangeGame==='headsup'&&position==='BTN'){
-      button.textContent=currentRangeMode==='bb'?'vs BTN/SB':'BTN/SB';
-    }else{
-      button.textContent=currentRangeMode==='bb'?`vs ${position}`:position;
-    }
-  });
-  document.getElementById('rangePositionTabs').classList.toggle('headsup-position-tabs',currentRangeGame==='headsup');
-
-  const title=document.getElementById('rangePageTitle');
-  const legend=document.getElementById('rangeLegend');
-  const hint=document.getElementById('rangeHint');
-  const contextBadge=document.getElementById('rangeContextBadge');
-  const actionBadge=document.getElementById('rangeActionBadge');
-  const contextDescription=document.getElementById('rangeContextDescription');
-  const rfiModeButton=document.querySelector('[data-range-mode="rfi"]');
-
-  contextBadge.textContent=`${scenario.gameLabel}・${scenario.stackLabel}`;
-  contextDescription.textContent=scenario.context;
-  rfiModeButton.textContent=currentRangeGame==='headsup'?'BTN/SBアクション':'オープンレンジ';
-
-  const headsUpAction=currentRangeGame==='headsup'?scenario.rfiAction:null;
-  actionBadge.classList.toggle('hidden',!headsUpAction);
-  if(headsUpAction){
-    const actionText=headsUpAction.type==='shove'
-      ?'ALL-IN'
-      :`OPEN ${stripNumberZeros(headsUpAction.size,1)}BB`;
-    actionBadge.textContent=currentRangeMode==='rfi'
-      ?actionText
-      :headsUpAction.type==='shove'
-        ?'vs ALL-IN'
-        :`vs OPEN ${stripNumberZeros(headsUpAction.size,1)}BB`;
-    actionBadge.classList.toggle('shove',headsUpAction.type==='shove');
-  }else{
-    actionBadge.classList.remove('shove');
-  }
-
-  const activeStack=currentRangeGame==='headsup'?currentHeadsUpStack:currentTournamentStack;
-  const shortStack=currentRangeGame!=='ring'&&Number(activeStack)<=15;
-
-  if(currentRangeMode==='rfi'){
-    if(currentRangeGame==='ring')title.textContent='リング RFIレンジ表';
-    else if(currentRangeGame==='headsup'){
-      const action=scenario.rfiAction;
-      title.textContent=action.type==='shove'
-        ?`ヘッズアップ ${currentHeadsUpStack}BB BTN/SB オールイン`
-        :`ヘッズアップ ${currentHeadsUpStack}BB BTN/SB ${action.label}`;
-    }else title.textContent=`トーナメント ${currentTournamentStack}BB RFIレンジ`;
-
-    if(currentRangeGame==='headsup'){
-      const action=scenario.rfiAction;
-      legend.innerHTML=action.type==='shove'
-        ?'<span><i class="dot hu-shove-dot"></i>オールイン</span><span><i class="dot fold"></i>フォールド</span>'
-        :`<span><i class="dot hu-open-dot"></i>${stripNumberZeros(action.size,1)}BBオープン</span><span><i class="dot fold"></i>フォールド</span>`;
-    }else{
-      legend.innerHTML=shortStack
-        ?'<span><i class="dot open"></i>参加候補</span><span><i class="dot fold"></i>フォールド</span>'
-        :'<span><i class="dot open"></i>オープン</span><span><i class="dot fold"></i>フォールド</span>';
-    }
-
-    if(currentRangeGame==='ring'){
-      hint.textContent='標準的な100BB・6-maxの学習用簡易レンジです。レーキ、相手、オープンサイズに応じて調整してください。';
-    }else if(currentRangeGame==='headsup'){
-      const action=scenario.rfiAction;
-      hint.textContent=action.type==='shove'
-        ?`${currentHeadsUpStack}BBでは、色付きのハンドをBTN/SBからオールインする簡易基準として表示しています。実戦ではリンプやミンレイズを混ぜる戦略もあります。`
-        :`${currentHeadsUpStack}BBでは、色付きのハンドをBTN/SBから${action.label}する簡易基準として表示しています。実戦ではリンプや一部オールインを混ぜる戦略もあります。`;
-    }else if(shortStack){
-      hint.textContent=`${currentTournamentStack}BBではミンレイズとオールインが混在します。表示は参加候補の目安です。バブル・ファイナル・サテライトなどICMが強い局面では必ず調整してください。`;
-    }else{
-      hint.textContent=`アンティあり・${currentTournamentStack}BB・6-maxを想定したchipEVの学習用簡易レンジです。100〜60BBは既存レンジから補間した目安で、バブルや賞金ジャンプではICMに応じて調整してください。`;
-    }
-
-    const set=scenario.rfi[currentRangePosition]||new Set();
-    const headsUpClass=currentRangeGame==='headsup'
-      ?scenario.rfiAction.type==='shove'?'hu-shove':'hu-open'
-      :'open';
-    const actionTitle=currentRangeGame==='headsup'
-      ?scenario.rfiAction.type==='shove'?'オールイン':scenario.rfiAction.label
-      :'オープン';
-
-    document.getElementById('rangeGrid').innerHTML=ranks.flatMap((_,row)=>ranks.map((__,col)=>{
-      const hand=handLabel(row,col);
-      const active=set.has(hand);
-      return `<button class="hand-cell ${active?headsUpClass:''}" title="${hand}${active?`：${actionTitle}`:'：フォールド'}">${hand}</button>`;
-    })).join('');
-  }else{
-    if(currentRangeGame==='ring')title.textContent='リング BBディフェンス';
-    else if(currentRangeGame==='headsup')title.textContent=`ヘッズアップ ${currentHeadsUpStack}BB BBディフェンス`;
-    else title.textContent=`トーナメント ${currentTournamentStack}BB BBディフェンス`;
-
-    legend.innerHTML=shortStack
-      ?'<span><i class="dot threebet"></i>オールイン</span><span><i class="dot call"></i>コール</span><span><i class="dot fold"></i>フォールド</span>'
-      :'<span><i class="dot threebet"></i>3ベット</span><span><i class="dot call"></i>コール</span><span><i class="dot fold"></i>フォールド</span>';
-
-    if(currentRangeGame==='ring'){
-      hint.textContent=`100BB・6-maxで${currentRangePosition}から約2.5BBオープンを受けた場合の学習用簡易レンジです。レーキが高いライブゲームではコールをやや絞ってください。`;
-    }else if(currentRangeGame==='headsup'){
-      const action=scenario.rfiAction;
-      hint.textContent=action.type==='shove'
-        ?`${currentHeadsUpStack}BBでBTN/SBのオールインを受けたBBの簡易目安です。青はコール／オールイン継続候補、黄は補助的なコール候補です。`
-        :`${currentHeadsUpStack}BBでBTN/SBの${action.label}を受けたBBの学習用簡易レンジです。青は3ベット候補、黄はコール候補です。`;
-    }else if(shortStack){
-      hint.textContent=`${currentRangePosition}の約2BBオープンに対する${currentTournamentStack}BBの簡易目安です。青は主にオールイン候補、黄はコール候補です。ICMが強い場面ではオールインを慎重に調整してください。`;
-    }else{
-      hint.textContent=`${currentRangePosition}の約2〜2.2BBオープンに対する${currentTournamentStack}BBのchipEV学習用簡易レンジです。100〜60BBは補間値を含み、アンティ、相手のサイズ、ICMに応じて調整してください。`;
-    }
-
-    const defense=scenario.defense[currentRangePosition]||{threebet:new Set(),call:new Set()};
-    document.getElementById('rangeGrid').innerHTML=ranks.flatMap((_,row)=>ranks.map((__,col)=>{
-      const hand=handLabel(row,col);
-      const action=defense.threebet.has(hand)?'threebet':defense.call.has(hand)?'call':'';
-      return `<button class="hand-cell ${action}" title="${hand}">${hand}</button>`;
-    })).join('');
-  }
+ const s=rangeScenario();if(!s.positions.includes(currentRangePosition)){currentRangePosition=s.positions[0];updateUiState({rangePosition:currentRangePosition});}
+ document.querySelectorAll('[data-range-game]').forEach(b=>b.classList.toggle('active',b.dataset.rangeGame===currentRangeGame));document.getElementById('tournamentStackSelector').classList.toggle('hidden',currentRangeGame!=='tournament');document.getElementById('headsUpStackSelector').classList.toggle('hidden',currentRangeGame!=='headsup');document.querySelectorAll('[data-tournament-stack]').forEach(b=>b.classList.toggle('active',b.dataset.tournamentStack===currentTournamentStack));document.querySelectorAll('[data-headsup-stack]').forEach(b=>b.classList.toggle('active',b.dataset.headsupStack===currentHeadsUpStack));document.querySelectorAll('[data-range-mode]').forEach(b=>b.classList.toggle('active',b.dataset.rangeMode===currentRangeMode));
+ document.querySelectorAll('[data-position]').forEach(b=>{const p=b.dataset.position,v=s.positions.includes(p);b.classList.toggle('hidden',!v);b.classList.toggle('active',v&&p===currentRangePosition);b.textContent=currentRangeGame==='headsup'&&p==='BTN'?(currentRangeMode==='bb'?'vs BTN/SB':'BTN/SB'):(currentRangeMode==='bb'?`vs ${p}`:p);});
+ const tour=currentRangeGame==='tournament';document.getElementById('rangeTableSizeField').classList.toggle('hidden',currentRangeGame==='headsup');document.getElementById('rangeAnteField').classList.toggle('hidden',!tour);document.getElementById('rangeIcmField').classList.toggle('hidden',!tour);document.getElementById('rangeOpenSizeField').classList.toggle('hidden',currentRangeMode!=='bb');['rangeTableSize','rangeAnte','rangeIcm','rangeOpenSize'].forEach(id=>document.getElementById(id).value=uiState[id]||({rangeTableSize:'6',rangeAnte:'bb',rangeIcm:'chip',rangeOpenSize:'2.5'}[id]));document.getElementById('toggleRangeFrequencyEdit').classList.toggle('active',rangeFrequencyEdit);document.getElementById('rangeFrequencyStatus').textContent=rangeFrequencyEdit?'頻度編集モード':'固定レンジ表示';document.getElementById('rangePositionTabs').classList.toggle('headsup-position-tabs',currentRangeGame==='headsup');
+ const title=document.getElementById('rangePageTitle'),legend=document.getElementById('rangeLegend'),hint=document.getElementById('rangeHint'),contextBadge=document.getElementById('rangeContextBadge'),actionBadge=document.getElementById('rangeActionBadge'),contextDescription=document.getElementById('rangeContextDescription');contextBadge.textContent=`${s.gameLabel}・${s.stackLabel}`;contextDescription.textContent=s.context;document.querySelector('[data-range-mode="rfi"]').textContent=currentRangeGame==='headsup'?'BTN/SBアクション':'オープンレンジ';const action=currentRangeMode==='rfi'?s.rfiAction:{type:'defense',label:`VS OPEN ${uiState.rangeOpenSize}BB`};actionBadge.classList.toggle('hidden',!action);actionBadge.classList.toggle('shove',action?.type==='shove');actionBadge.textContent=action?.type==='defense'?action.label:action?.type==='shove'?'ALL-IN':action?.type==='mixed'?'OPEN / ALL-IN':action?.type==='open'&&currentRangeGame==='headsup'?`OPEN ${stripNumberZeros(action.size,1)}BB`:action?.label||'';
+ const adj=currentRangeAdjustment();
+ if(currentRangeMode==='rfi'){
+  title.textContent=currentRangeGame==='ring'?'リング RFIレンジ表':currentRangeGame==='headsup'?(s.rfiAction.type==='shove'?`ヘッズアップ ${currentHeadsUpStack}BB BTN/SB オールイン`:`ヘッズアップ ${currentHeadsUpStack}BB BTN/SB ${s.rfiAction.label}`):`トーナメント ${currentTournamentStack}BB ${s.rfiAction.label}`;
+  const set=adjustSetByPercent(s.rfi[currentRangePosition]||new Set(),adj),cls=currentRangeGame==='headsup'?(s.rfiAction.type==='shove'?'hu-shove':'hu-open'):(s.rfiAction?.type==='shove'?'hu-shove':'open');legend.innerHTML=currentRangeGame==='tournament'&&s.rfiAction.type==='mixed'?'<span><i class="dot open"></i>2BBオープン／オールイン混合</span><span><i class="dot fold"></i>フォールド</span>':currentRangeGame==='tournament'&&s.rfiAction.type==='shove'?'<span><i class="dot hu-shove-dot"></i>オールイン候補</span><span><i class="dot fold"></i>フォールド</span>':`<span><i class="dot ${cls==='hu-shove'?'hu-shove-dot':'open'}"></i>${currentRangeGame==='headsup'?s.rfiAction.label:'参加'}</span><span><i class="dot fold"></i>フォールド</span>`;hint.textContent=currentRangeGame==='tournament'&&s.rfiAction.type==='mixed'?'15BBはミンレイズとオールインが混在する参加候補です。':currentRangeGame==='tournament'&&s.rfiAction.type==='shove'?'10BBは主にオールイン候補です。ICMで調整してください。':'条件変更時は境界ハンドを簡易補正します。';
+  document.getElementById('rangeGrid').innerHTML=ranks.flatMap((_,r)=>ranks.map((__,c)=>{const hand=handLabel(r,c),base=set.has(hand),freq=rangeFrequencyForHand(hand,base),active=freq>0,fl=freq>0&&freq<100?`<small>${freq}%</small>`:'';return `<button class="hand-cell ${active?cls:''} ${fl?'mixed-frequency':''}" data-range-hand="${hand}" data-default-active="${base?1:0}" style="--range-frequency:${freq/100}" title="${hand}：${freq}%">${hand}${fl}</button>`;})).join('');
+ }else{
+  title.textContent=currentRangeGame==='ring'?'リング BBディフェンス':currentRangeGame==='headsup'?`ヘッズアップ ${currentHeadsUpStack}BB BBディフェンス`:`トーナメント ${currentTournamentStack}BB BBディフェンス`;legend.innerHTML='<span><i class="dot threebet"></i>3ベット／オールイン</span><span><i class="dot call"></i>コール</span><span><i class="dot fold"></i>フォールド</span>';hint.textContent=`相手の${uiState.rangeOpenSize}BBオープンを想定。サイズ変更時はコール境界を簡易補正します。`;const d=adjustDefenseForOpenSize(s.defense[currentRangePosition]||{threebet:new Set(),call:new Set()});document.getElementById('rangeGrid').innerHTML=ranks.flatMap((_,r)=>ranks.map((__,c)=>{const hand=handLabel(r,c),baseAction=d.threebet.has(hand)?'threebet':d.call.has(hand)?'call':'',base=!!baseAction,freq=rangeFrequencyForHand(hand,base),act=freq>0?(baseAction||'call'):'',fl=freq>0&&freq<100?`<small>${freq}%</small>`:'';return `<button class="hand-cell ${act} ${fl?'mixed-frequency':''}" data-range-hand="${hand}" data-default-active="${base?1:0}" style="--range-frequency:${freq/100}" title="${hand}：${act||'fold'} ${freq}%">${hand}${fl}</button>`;})).join('');
+ }
+ renderRangeAssumptions(s);
 }
-document.querySelectorAll('[data-range-game]').forEach(button=>button.addEventListener('click',()=>{
-  currentRangeGame=button.dataset.rangeGame;
-  if(currentRangeGame==='headsup')currentRangePosition='BTN';
-  updateUiState({rangeGame:currentRangeGame,rangePosition:currentRangePosition});
-  renderRangeGrid();
-}));
-document.querySelectorAll('[data-tournament-stack]').forEach(button=>button.addEventListener('click',()=>{
-  currentTournamentStack=button.dataset.tournamentStack;
-  updateUiState({tournamentStack:currentTournamentStack});
-  renderRangeGrid();
-}));
-document.querySelectorAll('[data-headsup-stack]').forEach(button=>button.addEventListener('click',()=>{
-  currentHeadsUpStack=button.dataset.headsupStack;
-  updateUiState({headsUpStack:currentHeadsUpStack});
-  renderRangeGrid();
-}));
-document.querySelectorAll('[data-range-mode]').forEach(button=>button.addEventListener('click',()=>{
-  currentRangeMode=button.dataset.rangeMode;
-  updateUiState({rangeMode:currentRangeMode});
-  renderRangeGrid();
-}));
-document.querySelectorAll('[data-position]').forEach(button=>button.addEventListener('click',()=>{
-  if(button.classList.contains('hidden'))return;
-  currentRangePosition=button.dataset.position;
-  updateUiState({rangePosition:currentRangePosition});
-  renderRangeGrid();
-}));
+document.querySelectorAll('[data-range-game]').forEach(b=>b.addEventListener('click',()=>{currentRangeGame=b.dataset.rangeGame;if(currentRangeGame==='headsup')currentRangePosition='BTN';updateUiState({rangeGame:currentRangeGame,rangePosition:currentRangePosition});renderRangeGrid();}));document.querySelectorAll('[data-tournament-stack]').forEach(b=>b.addEventListener('click',()=>{currentTournamentStack=b.dataset.tournamentStack;updateUiState({tournamentStack:currentTournamentStack});renderRangeGrid();}));document.querySelectorAll('[data-headsup-stack]').forEach(b=>b.addEventListener('click',()=>{currentHeadsUpStack=b.dataset.headsupStack;updateUiState({headsUpStack:currentHeadsUpStack});renderRangeGrid();}));document.querySelectorAll('[data-range-mode]').forEach(b=>b.addEventListener('click',()=>{currentRangeMode=b.dataset.rangeMode;updateUiState({rangeMode:currentRangeMode});renderRangeGrid();}));document.querySelectorAll('[data-position]').forEach(b=>b.addEventListener('click',()=>{if(b.classList.contains('hidden'))return;currentRangePosition=b.dataset.position;updateUiState({rangePosition:currentRangePosition});renderRangeGrid();}));['rangeTableSize','rangeAnte','rangeIcm','rangeOpenSize'].forEach(id=>document.getElementById(id).addEventListener('change',()=>{updateUiState({[id]:document.getElementById(id).value});renderRangeGrid();}));document.getElementById('toggleRangeFrequencyEdit').addEventListener('click',()=>{rangeFrequencyEdit=!rangeFrequencyEdit;updateUiState({rangeFrequencyEdit});renderRangeGrid();});document.getElementById('resetRangeFrequency').addEventListener('click',()=>{delete rangeFrequencyStore[rangeScenarioKey()];saveRangeFrequencyStore();renderRangeGrid();showToast('現在の条件の頻度をリセットしました');});document.getElementById('rangeGrid').addEventListener('click',e=>{const cell=e.target.closest('[data-range-hand]');if(!cell||!rangeFrequencyEdit)return;cycleRangeFrequency(cell.dataset.rangeHand,cell.dataset.defaultActive==='1');renderRangeGrid();});
 
 function setTool(tool,save=true){
   const resolved=tool==='raise'?'odds':tool;
@@ -2311,8 +2169,10 @@ function oddsResultHtml({need,call,finalPot,note=''}) {
     ${note?`<p class="odds-result-note">${note}</p>`:''}`;
 }
 
+function currentRakeSettings(){return {rakePct:Math.max(0,num(document.getElementById('oddsRakePct').value)),rakeCap:Math.max(0,num(document.getElementById('oddsRakeCap').value))};}
 function renderBetSizeReferenceTable(){
   const pot=Math.max(0,num(document.getElementById('oddsPot').value));
+  const rake=currentRakeSettings();
   const sizes=[
     {label:'1/3 pot',fraction:1/3},
     {label:'1/2 pot',fraction:1/2},
@@ -2331,13 +2191,14 @@ function renderBetSizeReferenceTable(){
     '<div class="odds-table-row header"><span>ベットサイズ</span><span>コール額</span><strong>必要勝率</strong></div>'+
     sizes.map(({label,fraction})=>{
       const bet=pot*fraction;
-      const result=PokerCore.calculateBetOdds({pot,bet,call:bet});
+      const result=PokerCore.calculateBetOdds({pot,bet,call:bet,...rake});
       return `<div class="odds-table-row"><span>${label}</span><span>${stripNumberZeros(bet,2)}</span><strong>${pct(result.need)}</strong></div>`;
     }).join('');
 }
 function renderRaiseSizeReferenceTable(){
   const pot=Math.max(0,num(document.getElementById('raisePot').value));
   const ownBet=Math.max(0,num(document.getElementById('raiseOwnBet').value));
+  const rake=currentRakeSettings();
   const multiples=[2,2.5,3,3.5,4,5];
   document.getElementById('oddsReferenceEyebrow').textContent='RAISE REFERENCE';
   document.getElementById('oddsReferenceTitle').textContent='レイズサイズ別 必要勝率表';
@@ -2347,7 +2208,7 @@ function renderRaiseSizeReferenceTable(){
   document.getElementById('oddsReferenceTable').innerHTML=
     '<div class="odds-table-row header"><span>Raise to</span><span>追加コール</span><strong>必要勝率</strong></div>'+
     multiples.map(multiplier=>{
-      const result=PokerCore.calculateRaiseOdds({pot,ownBet,raiseTo:ownBet*multiplier});
+      const result=PokerCore.calculateRaiseOdds({pot,ownBet,raiseTo:ownBet*multiplier,...rake});
       return `<div class="odds-table-row"><span>${multiplier}x</span><span>${result.call.toLocaleString()}</span><strong>${pct(result.need)}</strong></div>`;
     }).join('');
 }
@@ -2357,21 +2218,21 @@ function renderOddsReferenceTable(){
   else renderBetSizeReferenceTable();
 }
 function renderOdds(){
-  const result=PokerCore.calculateBetOdds({pot:num(document.getElementById('oddsPot').value),bet:num(document.getElementById('oddsBet').value),call:num(document.getElementById('oddsCall').value)});
-  document.getElementById('oddsResult').innerHTML=oddsResultHtml({need:result.need,call:result.call,finalPot:result.finalPot,note:`相手のブラフ損益分岐点 ${pct(result.bluff)}・MDF ${pct(result.mdf)}`});
+  const result=PokerCore.calculateBetOdds({pot:num(document.getElementById('oddsPot').value),bet:num(document.getElementById('oddsBet').value),call:num(document.getElementById('oddsCall').value),...currentRakeSettings()});
+  document.getElementById('oddsResult').innerHTML=oddsResultHtml({need:result.need,call:result.call,finalPot:result.finalPot,note:`レーキ ${result.rake.toLocaleString()}・控除前 ${result.grossFinalPot.toLocaleString()}／ブラフ損益分岐点 ${pct(result.bluff)}・MDF ${pct(result.mdf)}（MDFはレーキ未考慮）`});
   renderOddsReferenceTable();
 }
-['oddsPot','oddsBet','oddsCall'].forEach(id=>document.getElementById(id).addEventListener('input',renderOdds));
+['oddsPot','oddsBet','oddsCall','oddsRakePct','oddsRakeCap'].forEach(id=>document.getElementById(id).addEventListener('input',renderOdds));
 document.querySelectorAll('[data-pot-fraction]').forEach(button=>button.addEventListener('click',()=>{
   const pot=num(document.getElementById('oddsPot').value),bet=Math.round(pot*num(button.dataset.potFraction)*100)/100;
   document.getElementById('oddsBet').value=bet;document.getElementById('oddsCall').value=bet;renderOdds();
 }));
 function renderRaiseOdds(){
-  const result=PokerCore.calculateRaiseOdds({pot:num(document.getElementById('raisePot').value),ownBet:num(document.getElementById('raiseOwnBet').value),raiseTo:num(document.getElementById('raiseTo').value)});
-  document.getElementById('raiseResult').innerHTML=result.valid?oddsResultHtml({need:result.need,call:result.call,finalPot:result.finalPot,note:`自分の既投入 ${result.ownBet.toLocaleString()}・相手のレイズ合計 ${result.raiseTo.toLocaleString()}`}):'<span class="negative">Raise toは自分のベット額以上にしてください。</span>';
+  const result=PokerCore.calculateRaiseOdds({pot:num(document.getElementById('raisePot').value),ownBet:num(document.getElementById('raiseOwnBet').value),raiseTo:num(document.getElementById('raiseTo').value),...currentRakeSettings()});
+  document.getElementById('raiseResult').innerHTML=result.valid?oddsResultHtml({need:result.need,call:result.call,finalPot:result.finalPot,note:`レーキ ${result.rake.toLocaleString()}・控除前 ${result.grossFinalPot.toLocaleString()}／自分の既投入 ${result.ownBet.toLocaleString()}`}):'<span class="negative">Raise toは自分のベット額以上にしてください。</span>';
   renderOddsReferenceTable();
 }
-['raisePot','raiseOwnBet','raiseTo'].forEach(id=>document.getElementById(id).addEventListener('input',renderRaiseOdds));
+['raisePot','raiseOwnBet','raiseTo','oddsRakePct','oddsRakeCap'].forEach(id=>document.getElementById(id).addEventListener('input',renderRaiseOdds));
 document.querySelectorAll('[data-raise-multiple]').forEach(button=>button.addEventListener('click',()=>{
   document.getElementById('raiseTo').value=num(document.getElementById('raiseOwnBet').value)*num(button.dataset.raiseMultiple);renderRaiseOdds();
 }));
@@ -2390,14 +2251,13 @@ function cardFaceHtml(code){
   const suit=cardSuits.find(s=>s.key===code[1])?.symbol||'';
   return `<span class="card-rank">${code[0]}</span><span class="card-suit-symbol">${suit}</span>`;
 }
-function cardsForContext(context){
-  return context==='pn'?pnCards.filter(Boolean):[...equityCards.hero,...equityCards.villain,...equityCards.board].filter(Boolean);
-}
+function cardsForContext(context){return context==='pn'?pnCards.filter(Boolean):[...equityCards.hero,...equityCards.villain,...equityCards.player3,...equityCards.board].filter(Boolean);}
 function cardTargetLabel(target){
   if(!target)return 'カードを選択';
   if(target.context==='pn')return `パワーナンバー・${target.index+1}枚目`;
   if(target.zone==='hero')return `自分のハンド・${target.index+1}枚目`;
   if(target.zone==='villain')return `相手のハンド・${target.index+1}枚目`;
+  if(target.zone==='player3')return `Player 3・${target.index+1}枚目`;
   return target.index<3?`フロップ・${target.index+1}枚目`:target.index===3?'ターン':'リバー';
 }
 function renderCardPicker(){
@@ -2429,6 +2289,7 @@ function nextCardTarget(target){
   if(target.context==='pn')return target.index===0?{context:'pn',zone:'pn',index:1}:null;
   if(target.zone==='hero')return target.index===0?{context:'equity',zone:'hero',index:1}:null;
   if(target.zone==='villain')return target.index===0?{context:'equity',zone:'villain',index:1}:null;
+  if(target.zone==='player3')return target.index===0?{context:'equity',zone:'player3',index:1}:null;
   if(target.zone==='board')return target.index<4?{context:'equity',zone:'board',index:target.index+1}:null;
   return null;
 }
@@ -2449,17 +2310,10 @@ function clearActiveCard(){
   renderCardPicker();
 }
 function renderVisualCards(){
-  document.querySelectorAll('[data-card-picker]').forEach(slot=>{
-    const context=slot.dataset.cardPicker,zone=slot.dataset.cardZone,index=Number(slot.dataset.cardIndex);
-    const code=context==='pn'?pnCards[index]:equityCards[zone][index];
-    slot.innerHTML=cardFaceHtml(code);
-    slot.classList.toggle('empty',!code);
-    slot.classList.toggle('red-card',!!code&&['h','d'].includes(code[1]));
-    slot.classList.toggle('black-card',!!code&&!['h','d'].includes(code[1]));
-  });
-  const villainKnown=equityCards.villain.filter(Boolean).length===2;
-  document.getElementById('villainModeLabel').textContent=villainKnown?'指定ハンド':'ランダム';
-  updatePnHandFromCards();
+  const heroMode=document.getElementById('equityHeroMode')?.value||uiState.equityHeroMode||'fixed',villainMode=document.getElementById('equityVillainMode')?.value||uiState.equityVillainMode||'random';
+  document.querySelectorAll('[data-card-picker]').forEach(slot=>{const context=slot.dataset.cardPicker,zone=slot.dataset.cardZone,index=Number(slot.dataset.cardIndex),code=context==='pn'?pnCards[index]:equityCards[zone][index];slot.innerHTML=cardFaceHtml(code);slot.classList.toggle('empty',!code);slot.classList.toggle('red-card',!!code&&['h','d'].includes(code[1]));slot.classList.toggle('black-card',!!code&&!['h','d'].includes(code[1]));const disabled=context==='equity'&&((zone==='hero'&&heroMode!=='fixed')||(zone==='villain'&&villainMode!=='fixed'));slot.disabled=disabled;slot.classList.toggle('mode-disabled',disabled);});
+  document.getElementById('villainModeLabel').textContent=villainMode==='fixed'?'指定ハンド':villainMode==='random'?'ランダム':`簡易上位${villainMode.replace('range','')}%`;
+  document.getElementById('player3Card').classList.toggle('hidden',!uiState.equityPlayer3);document.getElementById('togglePlayer3Btn').textContent=uiState.equityPlayer3?'Player 3を削除':'Player 3を追加';updatePnHandFromCards();updateEquityEstimate();
 }
 document.addEventListener('click',e=>{
   const slot=e.target.closest('[data-card-picker]');
@@ -2514,147 +2368,20 @@ function compareHands(a,b){
   for(let i=0;i<len;i++){const av=a[i]||0,bv=b[i]||0;if(av!==bv)return av>bv?1:-1;}
   return 0;
 }
-function equityInput(){
-  const hero=equityCards.hero.filter(Boolean),villain=equityCards.villain.filter(Boolean),board=equityCards.board.filter(Boolean);
-  if(hero.length!==2)return {error:'自分のハンドを2枚選択してください。'};
-  if(villain.length===1)return {error:'相手のハンドは2枚とも選ぶか、2枚とも空にしてください。'};
-  const firstGap=equityCards.board.findIndex(v=>!v);
-  if(firstGap>=0&&equityCards.board.slice(firstGap+1).some(Boolean))return {error:'ボードは左から順番に選択してください。'};
-  if(board.length===1||board.length===2)return {error:'ボードは0枚、3枚、4枚、5枚で指定してください。'};
-  const all=[...hero,...villain,...board];
-  if(new Set(all).size!==all.length)return {error:'同じカードが重複しています。'};
-  return {hero,villain:villain.length===2?villain:null,board};
-}
-function formatEquityPercent(value){
-  return `${num(value).toFixed(2)}%`;
-}
-function stopEquityWorker(message=''){
-  if(equityWorker){
-    equityWorker.terminate();
-    equityWorker=null;
-  }
-  document.getElementById('calculateEquityBtn').disabled=false;
-  document.getElementById('equityProgressWrap').classList.add('hidden');
-  if(message)document.getElementById('equityMethod').textContent=message;
-}
-function setEquityProgress(processed,total){
-  const percent=total?Math.min(100,processed/total*100):0;
-  document.getElementById('equityProgressWrap').classList.remove('hidden');
-  document.getElementById('equityProgressBar').style.width=`${percent}%`;
-  document.getElementById('equityProgressPercent').textContent=`${percent.toFixed(0)}%`;
-  document.getElementById('equityProgressText').textContent=
-    `${processed.toLocaleString()} / ${total.toLocaleString()} 通り`;
-}
-function renderExactEquityResult(result){
-  const heroWin=result.wins/result.total*100;
-  const tie=result.ties/result.total*100;
-  const villainWin=result.losses/result.total*100;
-  const heroEq=(result.wins+result.ties/2)/result.total*100;
-  const villainEq=100-heroEq;
-
-  document.getElementById('heroEquity').textContent=formatEquityPercent(heroEq);
-  document.getElementById('heroWin').textContent=formatEquityPercent(heroWin);
-  document.getElementById('heroTie').textContent=formatEquityPercent(tie);
-  document.getElementById('villainEquity').textContent=formatEquityPercent(villainEq);
-  document.getElementById('villainWin').textContent=formatEquityPercent(villainWin);
-  document.getElementById('villainTie').textContent=formatEquityPercent(tie);
-
-  document.getElementById('equityResult').innerHTML=
-    `自分のエクイティ <strong>${formatEquityPercent(heroEq)}</strong>`+
-    `<div class="equity-meter"><div class="equity-meter-fill" style="width:${heroEq}%"></div></div>`+
-    `<div class="exact-count-grid">`+
-      `<span><small>勝ち</small><strong>${result.wins.toLocaleString()}</strong></span>`+
-      `<span><small>引分</small><strong>${result.ties.toLocaleString()}</strong></span>`+
-      `<span><small>負け</small><strong>${result.losses.toLocaleString()}</strong></span>`+
-    `</div>`;
-
-  const opponentText=result.villainMode==='random'?'ランダム相手':'指定ハンド';
-  document.getElementById('equityMethod').textContent=
-    `${opponentText}に対して全${result.total.toLocaleString()}通りを完全列挙しました。乱数は使用していません。Tieは双方のエクイティへ半分ずつ加算しています。`;
-}
-function calculateEquityNow(){
-  const input=equityInput();
-  const resultEl=document.getElementById('equityResult');
-
-  if(input.error){
-    resultEl.innerHTML=`<span class="negative">${input.error}</span>`;
-    return;
-  }
-  if(!input.villain&&input.board.length===0){
-    resultEl.innerHTML=
-      `<span class="negative">プリフロップで相手をランダムにした完全計算は約21億通りになるため、相手の2枚を指定してください。</span>`;
-    document.getElementById('equityMethod').textContent=
-      '相手のハンドを指定すれば、プリフロップでも残り1,712,304ボードを完全列挙します。相手ランダムはフロップ以降に利用できます。';
-    return;
-  }
-  if(typeof Worker==='undefined'){
-    resultEl.innerHTML='<span class="negative">このブラウザは完全計算用のWeb Workerに対応していません。</span>';
-    return;
-  }
-
-  stopEquityWorker();
-  resetEquityStats();
-  document.getElementById('calculateEquityBtn').disabled=true;
-  document.getElementById('equityResult').textContent='完全計算を開始しています…';
-  document.getElementById('equityProgressBar').style.width='0%';
-  document.getElementById('equityProgressPercent').textContent='0%';
-  document.getElementById('equityProgressText').textContent='組み合わせ数を準備しています';
-  document.getElementById('equityProgressWrap').classList.remove('hidden');
-
-  equityWorker=new Worker('./equity-worker.js?v=4.2.0');
-  equityWorker.onmessage=event=>{
-    const message=event.data;
-    if(message.type==='progress'){
-      setEquityProgress(message.processed,message.total);
-      return;
-    }
-    if(message.type==='result'){
-      renderExactEquityResult(message);
-      stopEquityWorker();
-      return;
-    }
-    if(message.type==='error'){
-      if(message.code==='PREFLOP_RANDOM_TOO_LARGE'){
-        resultEl.innerHTML='<span class="negative">プリフロップ対ランダムは相手の2枚を指定してください。</span>';
-      }else{
-        resultEl.innerHTML=`<span class="negative">計算できませんでした：${esc(message.message)}</span>`;
-      }
-      stopEquityWorker('入力内容を確認して、もう一度計算してください。');
-    }
-  };
-  equityWorker.onerror=()=>{
-    resultEl.innerHTML='<span class="negative">完全計算中にエラーが発生しました。</span>';
-    stopEquityWorker('計算を中止しました。');
-  };
-  equityWorker.postMessage({
-    hero:input.hero,
-    villain:input.villain,
-    board:input.board
-  });
-}
-document.getElementById('calculateEquityBtn').addEventListener('click',calculateEquityNow);
-document.getElementById('cancelEquityBtn').addEventListener('click',()=>{
-  stopEquityWorker('計算を中止しました。カードを変更して再計算できます。');
-  document.getElementById('equityResult').textContent='計算を中止しました。';
-});
-document.getElementById('resetEquityBtn').addEventListener('click',()=>{
-  stopEquityWorker();
-  equityCards={hero:[null,null],villain:[null,null],board:[null,null,null,null,null]};
-  resetEquityStats();
-  renderVisualCards();
-});
-document.getElementById('randomVillainBtn').addEventListener('click',()=>{
-  stopEquityWorker();
-  equityCards.villain=[null,null];
-  resetEquityStats();
-  renderVisualCards();
-  showToast('相手をランダムハンドに戻しました');
-});
-function resetEquityStats(){
-  ['heroEquity','heroWin','heroTie','villainEquity','villainWin','villainTie'].forEach(id=>document.getElementById(id).textContent='—');
-  document.getElementById('equityResult').textContent='カード枠をタップして、自分のハンドを選択してください。';
-  document.getElementById('equityMethod').textContent='乱数は使わず全組み合わせを完全列挙します。プリフロップでは相手の2枚を指定してください。相手ランダムはフロップ以降に利用できます。';
-}
+function comboCountForClass(hand){return hand.length===2?6:hand.endsWith('s')?4:12;}
+function rangePresetClasses(percent){const target=1326*num(percent)/100;let total=0;const selected=[];[...allStartingHands].sort((a,b)=>handStrengthScore(b)-handStrengthScore(a)).some(hand=>{selected.push(hand);total+=comboCountForClass(hand);return total>=target;});return selected;}
+function equitySpecFromMode(mode,cards){if(mode==='fixed')return {type:'fixed',cards};if(mode==='random')return {type:'random'};return {type:'range',classes:rangePresetClasses(Number(mode.replace('range','')))};}
+function equityInput(){const heroMode=document.getElementById('equityHeroMode').value,villainMode=document.getElementById('equityVillainMode').value,hero=equityCards.hero.filter(Boolean),villain=equityCards.villain.filter(Boolean),p3=equityCards.player3.filter(Boolean),board=equityCards.board.filter(Boolean);if(heroMode==='fixed'&&hero.length!==2)return {error:'Player 1のハンドを2枚選択してください。'};if(villainMode==='fixed'&&villain.length!==2)return {error:'Player 2のハンドを2枚選択してください。'};if(uiState.equityPlayer3&&p3.length!==2)return {error:'Player 3のハンドを2枚選択してください。'};if(uiState.equityPlayer3&&(heroMode!=='fixed'||villainMode!=='fixed'))return {error:'3人ポットはPlayer 1・2・3をすべて指定ハンドにしてください。'};const gap=equityCards.board.findIndex(v=>!v);if(gap>=0&&equityCards.board.slice(gap+1).some(Boolean))return {error:'ボードは左から順番に選択してください。'};if(board.length===1||board.length===2)return {error:'ボードは0枚、3枚、4枚、5枚で指定してください。'};if((heroMode!=='fixed'||villainMode!=='fixed')&&board.length<3)return {error:'ランダムまたはレンジ計算はフロップ以降で使用してください。'};const all=[...hero,...villain,...p3,...board];if(new Set(all).size!==all.length)return {error:'同じカードが重複しています。'};return {heroSpec:equitySpecFromMode(heroMode,hero),villainSpec:equitySpecFromMode(villainMode,villain),player3:uiState.equityPlayer3?p3:null,board,heroMode,villainMode};}
+function estimatedRangeCombos(mode){if(mode==='fixed')return 1;if(mode==='random')return 1081;return rangePresetClasses(Number(mode.replace('range',''))).reduce((s,h)=>s+comboCountForClass(h),0);}
+function updateEquityEstimate(){const el=document.getElementById('equityEstimate');if(!el)return;const hm=document.getElementById('equityHeroMode').value,vm=document.getElementById('equityVillainMode').value,bc=equityCards.board.filter(Boolean).length,missing=5-bc;if(bc===1||bc===2){el.textContent='ボードは0・3・4・5枚で指定';return;}if((hm!=='fixed'||vm!=='fixed')&&bc<3){el.textContent='レンジ／ランダムはフロップ以降';return;}const boardComb=missing===0?1:missing===1?44:missing===2?990:1712304,est=Math.max(1,Math.round(estimatedRangeCombos(hm)*estimatedRangeCombos(vm)*boardComb));el.textContent=est>20000000?`約${est.toLocaleString()}通り：上限超過の可能性`:`約${est.toLocaleString()}通り`;}
+function formatEquityPercent(value){return `${num(value).toFixed(2)}%`;}
+function stopEquityWorker(message=''){if(equityWorker){equityWorker.terminate();equityWorker=null;}document.getElementById('calculateEquityBtn').disabled=false;document.getElementById('equityProgressWrap').classList.add('hidden');if(message)document.getElementById('equityMethod').textContent=message;}
+function setEquityProgress(processed,total){const percent=total?Math.min(100,processed/total*100):0;document.getElementById('equityProgressWrap').classList.remove('hidden');document.getElementById('equityProgressBar').style.width=`${percent}%`;document.getElementById('equityProgressPercent').textContent=`${percent.toFixed(0)}%`;document.getElementById('equityProgressText').textContent=`${processed.toLocaleString()} / ${total.toLocaleString()} 通り`;}
+function setPlayerEquity(prefix,p,total){document.getElementById(`${prefix}Equity`).textContent=formatEquityPercent(p.equityShare/total*100);document.getElementById(`${prefix}Win`).textContent=formatEquityPercent(p.wins/total*100);document.getElementById(`${prefix}Tie`).textContent=formatEquityPercent(p.ties/total*100);}
+function renderExactEquityResult(result){setPlayerEquity('hero',result.players[0],result.total);setPlayerEquity('villain',result.players[1],result.total);if(result.players[2])setPlayerEquity('player3',result.players[2],result.total);const heroEq=result.players[0].equityShare/result.total*100;document.getElementById('equityResult').innerHTML=`Player 1のエクイティ <strong>${formatEquityPercent(heroEq)}</strong><div class="equity-meter"><div class="equity-meter-fill" style="width:${heroEq}%"></div></div><div class="exact-count-grid">${result.players.map((p,i)=>`<span><small>P${i+1}</small><strong>${formatEquityPercent(p.equityShare/result.total*100)}</strong></span>`).join('')}</div>`;document.getElementById('equityMethod').textContent=`${result.modeLabel}を全${result.total.toLocaleString()}通り完全列挙しました。乱数は使用していません。複数人の同着は等分します。`;}
+function calculateEquityNow(){const input=equityInput(),resultEl=document.getElementById('equityResult');if(input.error){resultEl.innerHTML=`<span class="negative">${input.error}</span>`;return;}if(typeof Worker==='undefined'){resultEl.innerHTML='<span class="negative">このブラウザはWeb Workerに対応していません。</span>';return;}stopEquityWorker();resetEquityStats();document.getElementById('calculateEquityBtn').disabled=true;resultEl.textContent='完全列挙を開始しています…';document.getElementById('equityProgressBar').style.width='0%';document.getElementById('equityProgressPercent').textContent='0%';document.getElementById('equityProgressText').textContent='有効な組み合わせを準備しています';document.getElementById('equityProgressWrap').classList.remove('hidden');equityWorker=new Worker('./equity-worker.js?v=7.0.0');equityWorker.onmessage=e=>{const msg=e.data;if(msg.type==='progress'){setEquityProgress(msg.processed,msg.total);return;}if(msg.type==='result'){renderExactEquityResult(msg);stopEquityWorker();return;}if(msg.type==='error'){const text=msg.code==='CALCULATION_TOO_LARGE'?'正確な計算が2,000万通りを超えます。レンジを狭くするか、ターン／リバーを指定してください。':msg.message;resultEl.innerHTML=`<span class="negative">${esc(text)}</span>`;stopEquityWorker('入力条件を軽くして再計算してください。');}};equityWorker.onerror=()=>{resultEl.innerHTML='<span class="negative">完全計算中にエラーが発生しました。</span>';stopEquityWorker('計算を中止しました。');};equityWorker.postMessage(input);}
+document.getElementById('calculateEquityBtn').addEventListener('click',calculateEquityNow);document.getElementById('cancelEquityBtn').addEventListener('click',()=>{stopEquityWorker('計算を中止しました。');document.getElementById('equityResult').textContent='計算を中止しました。';});document.getElementById('resetEquityBtn').addEventListener('click',()=>{stopEquityWorker();equityCards={hero:[null,null],villain:[null,null],player3:[null,null],board:[null,null,null,null,null]};document.getElementById('equityHeroMode').value='fixed';document.getElementById('equityVillainMode').value='random';updateUiState({equityHeroMode:'fixed',equityVillainMode:'random',equityPlayer3:false});resetEquityStats();renderVisualCards();});document.getElementById('randomVillainBtn').addEventListener('click',()=>{stopEquityWorker();equityCards.villain=[null,null];document.getElementById('equityVillainMode').value='random';updateUiState({equityVillainMode:'random'});resetEquityStats();renderVisualCards();showToast('Player 2をランダムに戻しました');});document.getElementById('togglePlayer3Btn').addEventListener('click',()=>{const enabled=!uiState.equityPlayer3;if(!enabled)equityCards.player3=[null,null];updateUiState({equityPlayer3:enabled});resetEquityStats();renderVisualCards();});['equityHeroMode','equityVillainMode'].forEach(id=>document.getElementById(id).addEventListener('change',()=>{const hm=document.getElementById('equityHeroMode').value,vm=document.getElementById('equityVillainMode').value;if(hm!=='fixed')equityCards.hero=[null,null];if(vm!=='fixed')equityCards.villain=[null,null];updateUiState({equityHeroMode:hm,equityVillainMode:vm});resetEquityStats();renderVisualCards();}));
+function resetEquityStats(){['heroEquity','heroWin','heroTie','villainEquity','villainWin','villainTie','player3Equity','player3Win','player3Tie'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='—';});document.getElementById('equityResult').textContent='ハンドまたはレンジとボードを指定してください。';document.getElementById('equityMethod').textContent='指定ハンド同士はプリフロップから完全列挙。ランダム・レンジはフロップ以降、3人ポットは全員指定ハンドに対応します。';updateEquityEstimate();}
 
 const DRAW_PRESET_LABELS={
   'combo-15':'OESD+FD',
@@ -2690,12 +2417,9 @@ function applyDrawPreset(preset){
   renderDraw();
 }
 function renderDraw(){
-  const result=PokerCore.calculateDrawOdds({
-    street:document.getElementById('drawStreet').value,
-    outs:document.getElementById('drawOuts').value
-  });
+  const result=PokerCore.calculateDrawOdds({street:document.getElementById('drawStreet').value,outs:document.getElementById('drawOuts').value,dirtyOuts:document.getElementById('drawDirtyOuts').value});
   const label=result.street==='flop'?'リバーまで':'リバー';
-  document.getElementById('drawTotalBadge').textContent=`${result.outs}アウツ`;
+  document.getElementById('drawTotalBadge').textContent=result.dirtyOuts?`${result.rawOuts}→${result.outs}クリーン`:`${result.outs}アウツ`;
   document.getElementById('drawResult').innerHTML=
     `次の1枚でヒット <strong>${pct(result.next)}</strong><br>`+
     `${label}までに1回以上ヒット <strong>${pct(result.byRiver)}</strong><br>`+
@@ -2703,12 +2427,12 @@ function renderDraw(){
   renderDrawPresetUi();
 }
 document.getElementById('drawStreet').addEventListener('input',renderDraw);
-document.getElementById('drawOuts').addEventListener('input',renderDraw);
+document.getElementById('drawOuts').addEventListener('input',renderDraw);document.getElementById('drawDirtyOuts').addEventListener('input',renderDraw);
 document.querySelectorAll('[data-draw-preset]').forEach(button=>button.addEventListener('click',()=>{
   const key=button.dataset.drawPreset;
   if(selectedDrawPreset===key){
     selectedDrawPreset=null;
-    document.getElementById('drawOuts').value=0;
+    document.getElementById('drawOuts').value=0;document.getElementById('drawDirtyOuts').value=0;
     renderDraw();
     return;
   }
@@ -2716,7 +2440,7 @@ document.querySelectorAll('[data-draw-preset]').forEach(button=>button.addEventL
 }));
 document.getElementById('clearDrawPresetsBtn').addEventListener('click',()=>{
   selectedDrawPreset=null;
-  document.getElementById('drawOuts').value=0;
+  document.getElementById('drawOuts').value=0;document.getElementById('drawDirtyOuts').value=0;
   renderDraw();
 });
 
@@ -2771,21 +2495,16 @@ function renderPower(){
   const required=m*behind;
   const selectedHand=canonicalHandFromCards(pnCards);
   const selectedPn=pnForHand(selectedHand);
-  const selectedOk=Boolean(selectedHand)&&selectedPn>=required;
+  const firstIn=document.getElementById('pnFirstIn').checked,icmMode=document.getElementById('pnIcmMode').value,applicable=firstIn,selectedOk=Boolean(selectedHand)&&selectedPn>=required;
+  document.getElementById('pnScopeStatus').textContent=!applicable?'適用外':icmMode==='icm'?'参考値':'適用条件内';document.getElementById('pnScopeStatus').className=`summary-badge ${!applicable?'negative':icmMode==='icm'?'warning':''}`;
 
   document.getElementById('pnMValue').textContent=m.toFixed(2);
   document.getElementById('pnThresholdLabel').textContent=required.toFixed(1);
   document.getElementById('pnHandValue').textContent=selectedHand?pnDisplayValue(selectedPn):'—';
-  document.getElementById('pnDecision').textContent=selectedHand
-    ?(selectedOk?'候補':'見送り')
-    :'未選択';
-  document.getElementById('pnDecision').className=selectedHand
-    ?(selectedOk?'positive':'negative')
-    :'';
+  document.getElementById('pnDecision').textContent=!applicable?'適用外':selectedHand?(icmMode==='icm'?(selectedOk?'参考候補':'参考見送り'):(selectedOk?'候補':'見送り')):'未選択';
+  document.getElementById('pnDecision').className=!applicable?'negative':selectedHand?(selectedOk?'positive':'negative'):'';
 
-  document.getElementById('pnResult').textContent=selectedHand
-    ?`${selectedHand}：${selectedOk?'必要PN以上':'必要PN未満'}`
-    :'白枠のハンドが必要PN以上です。';
+  document.getElementById('pnResult').textContent=!applicable?'パワーナンバーは全員フォールドで自分がFirst inの場面に限る簡易指標です。':selectedHand?`${selectedHand}：${selectedOk?'必要PN以上':'必要PN未満'}${icmMode==='icm'?'（ICMでは参考値）':''}`:'白枠のハンドが必要PN以上です。';
 
   let qualifiedCount=0;
   const selected=canonicalHandFromCards(pnCards);
@@ -2809,7 +2528,7 @@ function renderPower(){
   document.getElementById('pnQualifiedCount').textContent=`${qualifiedCount} / 169`;
   document.getElementById('pnGrid').innerHTML=cells.join('');
 }
-['pnStack'  ,'pnSb','pnBb','pnAnteTotal','pnBehind'].forEach(id=>document.getElementById(id).addEventListener('input',renderPower));
+['pnStack','pnSb','pnBb','pnAnteTotal','pnBehind','pnFirstIn','pnIcmMode'].forEach(id=>document.getElementById(id).addEventListener('input',renderPower));
 document.getElementById('pnGrid').addEventListener('click',e=>{
   const b=e.target.closest('[data-pn-hand]');if(!b)return;selectedPnHand=b.dataset.pnHand;pnCards=representativeCardsForHand(selectedPnHand);renderVisualCards();renderPower();
 });
@@ -3550,4 +3269,4 @@ function renderAll(){
   setTool(uiState.lastTool==='raise'?'odds':(uiState.lastTool||'odds'),false);
 }
 document.getElementById('sessionDate').value=today();document.getElementById('handDate').value=today();document.getElementById('bankrollTransactionDate').value=today();document.getElementById('chipTransactionDate').value=today();
-buildPnHandPicker();initializeSmartNumberInputs();initializeCollapsibleSections();resetSessionForm();renderAll();renderVisualCards();renderBackupStatus();
+document.getElementById('equityHeroMode').value=uiState.equityHeroMode||'fixed';document.getElementById('equityVillainMode').value=uiState.equityVillainMode||'random';buildPnHandPicker();initializeSmartNumberInputs();initializeCollapsibleSections();resetSessionForm();renderAll();renderVisualCards();renderBackupStatus();

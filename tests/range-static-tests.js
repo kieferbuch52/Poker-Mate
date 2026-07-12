@@ -48,3 +48,10 @@ if(!html.includes('id="rangeActionBadge"'))throw new Error('missing heads-up act
 if(!app.includes("headsUpRfiRanges['10']={BTN:cloneRangeSet(headsUpShove10)}"))throw new Error('10BB RFI is not the shove range');
 if(!app.includes("headsUpRfiRanges['5']={BTN:cloneRangeSet(headsUpShove5)}"))throw new Error('5BB RFI is not the shove range');
 if(!app.includes("'hu-shove':'hu-open'"))throw new Error('missing explicit action cell classes');
+
+if(!html.includes('id="rangeTableSize"'))throw new Error('missing table-size condition');
+if(!html.includes('id="rangeOpenSize"'))throw new Error('missing open-size condition');
+if(!html.includes('id="toggleRangeFrequencyEdit"'))throw new Error('missing frequency editor');
+if(!html.includes('id="rangeAssumptionContent"'))throw new Error('missing range provenance panel');
+if(!app.includes('RANGE_FREQUENCY_KEY'))throw new Error('missing frequency persistence');
+if(!app.includes('tournamentActionForStack'))throw new Error('missing tournament action labels');

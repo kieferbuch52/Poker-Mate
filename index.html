@@ -11,7 +11,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./styles.css?v=6.1.3">
+  <link rel="stylesheet" href="./styles.css?v=7.0.0">
 </head>
 <body>
   <header class="topbar">
@@ -21,7 +21,7 @@
     </div>
     <div class="top-actions">
       <button id="globalQuickButton" class="top-quick-button" type="button" aria-haspopup="dialog" aria-controls="quickActionSheet" aria-label="クイック操作を開く">＋</button>
-      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v6.1.3</button>
+      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v7.0.0</button>
       <button id="installBtn" class="ghost hidden">ホーム画面に追加</button>
     </div>
   </header>
@@ -475,6 +475,27 @@
             <button class="segment" data-range-mode="bb" type="button">BBディフェンス</button>
           </div>
         </div>
+
+        <div id="rangeConditionControls" class="range-condition-grid">
+          <label id="rangeTableSizeField">卓人数
+            <select id="rangeTableSize"><option value="6">6-max</option><option value="9">9-max簡易補正</option></select>
+          </label>
+          <label id="rangeAnteField">アンティ
+            <select id="rangeAnte"><option value="bb">BBアンティ</option><option value="none">アンティなし</option></select>
+          </label>
+          <label id="rangeIcmField">局面
+            <select id="rangeIcm"><option value="chip">chipEV</option><option value="bubble">バブル簡易補正</option><option value="final">FT簡易補正</option></select>
+          </label>
+          <label id="rangeOpenSizeField" class="hidden">相手オープン
+            <select id="rangeOpenSize"><option value="2">2.0BB</option><option value="2.2">2.2BB</option><option value="2.5" selected>2.5BB</option><option value="3">3.0BB</option><option value="4">4.0BB</option></select>
+          </label>
+        </div>
+
+        <div class="range-frequency-actions">
+          <button id="toggleRangeFrequencyEdit" type="button" class="ghost compact-button">頻度編集</button>
+          <button id="resetRangeFrequency" type="button" class="ghost compact-button">頻度をリセット</button>
+          <span id="rangeFrequencyStatus">固定レンジ表示</span>
+        </div>
       </section>
 
       <section class="panel">
@@ -495,6 +516,10 @@
         <div id="rangeLegend" class="range-legend"></div>
         <div id="rangeGrid" class="hand-grid range-fit-grid" aria-label="ハンドレンジ表"></div>
         <p id="rangeHint" class="hint"></p>
+        <details class="range-assumption-panel" open>
+          <summary>このレンジの前提・精度</summary>
+          <div id="rangeAssumptionContent"></div>
+        </details>
       </section>
     </section>
 
@@ -533,6 +558,12 @@
         <div class="segmented two odds-mode-tabs">
           <button class="segment active" data-odds-mode="bet" type="button">ベットにコール</button>
           <button class="segment" data-odds-mode="raise" type="button">レイズにコール</button>
+        </div>
+
+        <div class="odds-rake-controls">
+          <label>レーキ<div class="input-with-suffix"><input id="oddsRakePct" type="number" inputmode="decimal" min="0" max="100" step="0.1" value="0"><span>%</span></div></label>
+          <label>上限<input id="oddsRakeCap" type="number" inputmode="decimal" min="0" step="0.01" value="0"></label>
+          <small>上限0は無制限。レーキ控除後のポットで必要勝率を計算します。</small>
         </div>
 
         <div id="betOddsPane" class="odds-pane">
@@ -588,10 +619,15 @@
             <p class="eyebrow">EQUITY CALCULATOR</p>
             <div class="equity-title-row">
               <h3>ハンド勝率計算</h3>
-              <span class="exact-calc-badge">完全計算</span>
+              <span class="exact-calc-badge">完全列挙・条件あり</span>
             </div>
           </div>
           <button id="resetEquityBtn" class="ghost compact-button" type="button">クリア</button>
+        </div>
+
+        <div class="equity-mode-grid">
+          <label>Player 1<select id="equityHeroMode"><option value="fixed">指定ハンド</option><option value="range10">簡易上位10%</option><option value="range20">簡易上位20%</option><option value="range30">簡易上位30%</option><option value="range50">簡易上位50%</option></select></label>
+          <label>Player 2<select id="equityVillainMode"><option value="random">ランダム</option><option value="fixed">指定ハンド</option><option value="range10">簡易上位10%</option><option value="range20">簡易上位20%</option><option value="range30">簡易上位30%</option><option value="range50">簡易上位50%</option></select></label>
         </div>
 
         <article class="equity-player-card">
@@ -624,6 +660,24 @@
           </div>
         </article>
 
+        <div class="equity-third-player-control">
+          <button id="togglePlayer3Btn" type="button" class="ghost compact-button">Player 3を追加</button>
+          <span>3人ポットは全員のハンド指定時に完全計算します。</span>
+        </div>
+
+        <article id="player3Card" class="equity-player-card hidden">
+          <div class="equity-player-label section-head"><span>Player 3</span><span class="fixed-badge">指定ハンド</span></div>
+          <div class="equity-player-content">
+            <div class="visual-card-row hole-card-slots">
+              <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="player3" data-card-index="0" aria-label="Player 3の1枚目">?</button>
+              <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="player3" data-card-index="1" aria-label="Player 3の2枚目">?</button>
+            </div>
+            <div class="equity-numbers">
+              <div><span>Equity</span><strong id="player3Equity">—</strong></div><div><span>Win</span><strong id="player3Win">—</strong></div><div><span>Tie</span><strong id="player3Tie">—</strong></div>
+            </div>
+          </div>
+        </article>
+
         <div class="equity-board-block">
           <div class="street-label-row">
             <span>Flop</span><span>Turn</span><span>River</span>
@@ -638,9 +692,11 @@
         </div>
 
         <div class="equity-actions">
-          <button id="calculateEquityBtn" class="primary" type="button">完全計算する</button>
+          <button id="calculateEquityBtn" class="primary" type="button">完全列挙する</button>
           <button id="randomVillainBtn" class="secondary" type="button">相手をランダムに戻す</button>
         </div>
+
+        <div class="equity-estimate-panel"><span>計算量の概算</span><strong id="equityEstimate">カードを選択してください</strong></div>
 
         <div id="equityProgressWrap" class="equity-progress-wrap hidden">
           <div class="equity-progress-head">
@@ -654,7 +710,7 @@
         </div>
 
         <div id="equityResult" class="result-box">カード枠をタップして、自分のハンドを選択してください。</div>
-        <p id="equityMethod" class="hint">乱数は使わず、残りカードの全組み合わせを完全列挙します。相手がランダムでもフロップ以降は正確に計算できます。</p>
+        <p id="equityMethod" class="hint">指定ハンド同士はプリフロップから完全列挙できます。ランダム・レンジはフロップ以降、3人ポットは全員指定ハンドに対応します。</p>
       </section>
 
       <section id="drawTool" class="panel hidden">
@@ -666,18 +722,10 @@
           <span id="drawTotalBadge" class="summary-badge">0アウツ</span>
         </div>
 
-        <div class="draw-compact-inputs">
-          <label>
-            <span>Street</span>
-            <select id="drawStreet">
-              <option value="flop">Flop（2枚）</option>
-              <option value="turn">Turn（1枚）</option>
-            </select>
-          </label>
-          <label>
-            <span>最終アウツ</span>
-            <input id="drawOuts" type="number" inputmode="numeric" min="0" max="47" step="1" value="0">
-          </label>
+        <div class="draw-compact-inputs draw-three-inputs">
+          <label><span>Street</span><select id="drawStreet"><option value="flop">Flop（2枚）</option><option value="turn">Turn（1枚）</option></select></label>
+          <label><span>総アウツ</span><input id="drawOuts" type="number" inputmode="numeric" min="0" max="47" step="1" value="0"></label>
+          <label><span>危険アウツ</span><input id="drawDirtyOuts" type="number" inputmode="numeric" min="0" max="47" step="1" value="0"></label>
         </div>
 
         <div class="draw-preset-grid draw-single-choice" role="radiogroup" aria-label="代表的なドローを1つ選択">
@@ -720,7 +768,7 @@
           <div><span>12アウツ</span><strong>約45% / 26%</strong></div>
           <div><span>15アウツ</span><strong>約54% / 33%</strong></div>
         </div>
-        <p class="hint draw-hint">画像の代表例をもとにした単一選択です。実際のアウツは相手のハンド、ボード、重複やダーティーアウツを考慮して「最終アウツ」で調整してください。</p>
+        <p class="hint draw-hint">総アウツから「引いても負ける可能性があるカード」を危険アウツとして差し引きます。相手の上位ドローやボードペアなどは自動判定しません。</p>
       </section>
 
       <section id="powerTool" class="panel hidden">
@@ -753,6 +801,12 @@
             <span>後人数</span>
             <input id="pnBehind" type="number" inputmode="numeric" min="1" max="9" value="3">
           </label>
+        </div>
+
+        <div class="pn-scope-controls">
+          <label class="check-control"><input id="pnFirstIn" type="checkbox" checked><span>First in</span></label>
+          <label>局面<select id="pnIcmMode"><option value="chip">chipEV</option><option value="icm">ICMあり</option></select></label>
+          <span id="pnScopeStatus" class="summary-badge">適用条件内</span>
         </div>
 
         <div class="pn-hand-compact">
@@ -965,7 +1019,7 @@
         <button id="saveSettingsBtn" class="secondary" type="button">基本設定を保存</button>
         <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">
           <span>アプリバージョン</span>
-          <strong id="settingsVersion">v6.1.3 <span aria-hidden="true">›</span></strong>
+          <strong id="settingsVersion">v7.0.0 <span aria-hidden="true">›</span></strong>
         </button>
       </section>
 
@@ -1032,7 +1086,7 @@
     <div class="current-version-card">
       <div>
         <span class="current-version-label">現在のバージョン</span>
-        <strong id="currentVersionInModal">v6.1.3</strong>
+        <strong id="currentVersionInModal">v7.0.0</strong>
       </div>
       <span class="up-to-date-badge">最新版</span>
     </div>
@@ -1109,7 +1163,7 @@
   </nav>
 
   <div id="toast" class="toast" role="status"></div>
-  <script src="./core-utils.js?v=6.1.3"></script>
-  <script src="./app.js?v=6.1.3"></script>
+  <script src="./core-utils.js?v=7.0.0"></script>
+  <script src="./app.js?v=7.0.0"></script>
 </body>
 </html>
