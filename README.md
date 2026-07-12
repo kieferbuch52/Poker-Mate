@@ -1,4 +1,4 @@
-# Poker Mate v8.1.1
+# Poker Mate v9.0.0
 
 スマホ向けのポーカー収支・学習PWAです。
 
@@ -18,6 +18,32 @@
 - ハンドメモ
 - JSONバックアップ、CSV出力
 - オフライン利用
+
+## v9.0.0の更新内容
+
+### コード構成の全面再設計
+
+約3,600行の単一`app.js`を、起動監視・設定・状態管理・ホーム・収支・レンジ・計算ツール・レビュー・UI部品・データ管理へ分割しました。
+
+`app.js`は起動処理と診断APIのみを持つ小さなファイルになっています。
+
+### 信頼性
+
+- JavaScript例外と未処理Promiseを捕捉
+- 起動失敗時に再読み込み案内を表示
+- 起動状態をloading／ready／failedで管理
+- `PokerMateDebug`診断APIを追加
+
+### データ互換性
+
+`pokerMateDataV1`、`pokerMateUiV2`、`pokerMateRangeFrequenciesV1`、`pokerMateSessionTimerV1`とスキーマv6は変更していません。
+
+### 開発構成
+
+- 読込順を`js/module-order.json`で管理
+- `npm run build`で検証用バンドルを生成
+- モジュール数・読込順・Service Worker登録を自動テスト
+- `ARCHITECTURE.md`へ責務と変更ルールを記載
 
 ## v8.1.1の更新内容
 
@@ -476,3 +502,4 @@ BTN／SBレンジで、各スタックのハンドをどのアクションで使
 - **v8.0.0**：UI整理、表示密度設定、ヨコサワ式レンジの独自再構成、Firebase Authenticationによる任意のGoogleログインを追加
 - **v8.1.0**：ヨコサワ式へリング／トーナメント切り替えと、3BETされた場面の4BET・CALL・FOLD表示を追加
 - **v8.1.1**：ベットにコールへ1/4 potを追加。パワーナンバーのFirst in項目を削除し、Poker Mateレンジの3BETを青・オールインを赤で表示
+- **v9.0.0**：約3,600行の単一app.jsを機能別10モジュールへ再構築。起動エラー境界、診断API、ビルド処理、アーキテクチャテストを追加し、既存データ互換性を維持

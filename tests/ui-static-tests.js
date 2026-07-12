@@ -3,7 +3,8 @@ const fs=require('fs');
 const path=require('path');
 const root=path.join(__dirname,'..');
 const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
-const app=fs.readFileSync(path.join(root,'app.js'),'utf8');
+const moduleOrder=JSON.parse(fs.readFileSync(path.join(root,'js','module-order.json'),'utf8'));
+const app=moduleOrder.map(file=>fs.readFileSync(path.join(root,'js',file),'utf8')).join('\n')+'\n'+fs.readFileSync(path.join(root,'app.js'),'utf8');
 const css=fs.readFileSync(path.join(root,'styles.css'),'utf8');
 const auth=fs.readFileSync(path.join(root,'auth.mjs'),'utf8');
 const sw=fs.readFileSync(path.join(root,'sw.js'),'utf8');
@@ -24,7 +25,7 @@ if(!app.includes('FIREBASE_CONFIG_KEY'))throw new Error('missing Firebase config
 if(!auth.includes('GoogleAuthProvider'))throw new Error('missing Google provider');
 if(!auth.includes('signInWithRedirect'))throw new Error('missing mobile redirect');
 if(!auth.includes('signInWithPopup'))throw new Error('missing desktop popup');
-if(!sw.includes('auth.mjs?v=8.1.1'))throw new Error('auth module not cached');
+if(!sw.includes('auth.mjs?v=9.0.0'))throw new Error('auth module not cached');
 if(!css.includes('.yokosawa-navy'))throw new Error('missing Yokosawa colors');
 
 const match=app.match(/const YOKOSAWA_TIER_ROWS=\[(.*?)\];/s);

@@ -1,8 +1,9 @@
 {
   "name": "poker-mate",
   "private": true,
-  "version": "8.1.1",
+  "version": "9.0.0",
   "scripts": {
-    "test": "node tests/run-tests.js && node tests/range-static-tests.js && node tests/equity-worker-tests.js && node tests/ui-static-tests.js"
+    "build": "node scripts/build.js",
+    "test": "npm run build && node tests/run-tests.js && node tests/range-static-tests.js && node tests/equity-worker-tests.js && node tests/ui-static-tests.js && node tests/architecture-tests.js"
   }
 }

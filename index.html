@@ -11,7 +11,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./styles.css?v=8.1.1">
+  <link rel="stylesheet" href="./styles.css?v=9.0.0">
 </head>
 <body>
   <header class="topbar">
@@ -24,7 +24,7 @@
         <span id="headerUserAvatar" class="header-user-avatar">G</span><span id="headerUserLabel">未ログイン</span>
       </button>
       <button id="globalQuickButton" class="top-quick-button" type="button" aria-haspopup="dialog" aria-controls="quickActionSheet" aria-label="クイック操作を開く">＋</button>
-      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v8.1.1</button>
+      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v9.0.0</button>
       <button id="installBtn" class="ghost hidden">ホーム画面に追加</button>
     </div>
   </header>
@@ -1097,7 +1097,7 @@
         <button id="saveSettingsBtn" class="secondary" type="button">基本設定を保存</button>
         <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">
           <span>アプリバージョン</span>
-          <strong id="settingsVersion">v8.1.1 <span aria-hidden="true">›</span></strong>
+          <strong id="settingsVersion">v9.0.0 <span aria-hidden="true">›</span></strong>
         </button>
       </section>
 
@@ -1164,7 +1164,7 @@
     <div class="current-version-card">
       <div>
         <span class="current-version-label">現在のバージョン</span>
-        <strong id="currentVersionInModal">v8.1.1</strong>
+        <strong id="currentVersionInModal">v9.0.0</strong>
       </div>
       <span class="up-to-date-badge">最新版</span>
     </div>
@@ -1241,9 +1241,19 @@
   </nav>
 
   <div id="toast" class="toast" role="status"></div>
-  <script src="./firebase-config.js?v=8.1.1"></script>
-  <script src="./core-utils.js?v=8.1.1"></script>
-  <script src="./app.js?v=8.1.1"></script>
-  <script type="module" src="./auth.mjs?v=8.1.1"></script>
+  <script src="./firebase-config.js?v=9.0.0"></script>
+  <script src="./core-utils.js?v=9.0.0"></script>
+  <script src="./js/00-runtime.js?v=9.0.0"></script>
+  <script src="./js/10-config.js?v=9.0.0"></script>
+  <script src="./js/20-state.js?v=9.0.0"></script>
+  <script src="./js/30-shell.js?v=9.0.0"></script>
+  <script src="./js/40-sessions.js?v=9.0.0"></script>
+  <script src="./js/50-ranges.js?v=9.0.0"></script>
+  <script src="./js/60-tools.js?v=9.0.0"></script>
+  <script src="./js/70-review-bankroll.js?v=9.0.0"></script>
+  <script src="./js/80-components.js?v=9.0.0"></script>
+  <script src="./js/90-data.js?v=9.0.0"></script>
+  <script src="./app.js?v=9.0.0"></script>
+  <script type="module" src="./auth.mjs?v=9.0.0"></script>
 </body>
 </html>

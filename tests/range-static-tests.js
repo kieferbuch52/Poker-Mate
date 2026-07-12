@@ -1,7 +1,8 @@
 'use strict';
 const fs=require('fs');
 const path=require('path');
-const app=fs.readFileSync(path.join(__dirname,'..','app.js'),'utf8');
+const moduleOrder=JSON.parse(fs.readFileSync(path.join(__dirname,'..','js','module-order.json'),'utf8'));
+const app=moduleOrder.map(file=>fs.readFileSync(path.join(__dirname,'..','js',file),'utf8')).join('\n')+'\n'+fs.readFileSync(path.join(__dirname,'..','app.js'),'utf8');
 const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 const css=fs.readFileSync(path.join(__dirname,'..','styles.css'),'utf8');
 

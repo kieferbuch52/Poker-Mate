@@ -1,5 +1,5 @@
-const CACHE = 'poker-mate-v811';
-const ASSETS = ['./','./index.html','./core-utils.js?v=8.1.1','./styles.css?v=8.1.1','./app.js?v=8.1.1','./equity-worker.js?v=8.1.1','./auth.mjs?v=8.1.1','./firebase-config.js?v=8.1.1','./FIREBASE_SETUP.md','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
+const CACHE = 'poker-mate-v90';
+const ASSETS = ['./','./index.html','./core-utils.js?v=9.0.0','./styles.css?v=9.0.0','./js/00-runtime.js?v=9.0.0','./js/10-config.js?v=9.0.0','./js/20-state.js?v=9.0.0','./js/30-shell.js?v=9.0.0','./js/40-sessions.js?v=9.0.0','./js/50-ranges.js?v=9.0.0','./js/60-tools.js?v=9.0.0','./js/70-review-bankroll.js?v=9.0.0','./js/80-components.js?v=9.0.0','./js/90-data.js?v=9.0.0','./app.js?v=9.0.0','./equity-worker.js?v=9.0.0','./auth.mjs?v=9.0.0','./firebase-config.js?v=9.0.0','./FIREBASE_SETUP.md','./ARCHITECTURE.md','./js/module-order.json','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting()));
 });

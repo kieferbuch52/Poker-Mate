@@ -1822,3 +1822,18 @@ body:not(.sticky-controls-disabled) .more-view-tabs,body:not(.sticky-controls-di
 .dot.shove{
   background:#ff7474;
 }
+
+/* v9.0 runtime diagnostics */
+.fatal-boot-panel{
+  position:fixed;z-index:9999;right:14px;bottom:calc(14px + env(safe-area-inset-bottom));
+  left:14px;max-width:520px;margin:auto;padding:16px;border:1px solid rgba(255,116,116,.48);
+  border-radius:15px;background:rgba(36,8,12,.96);box-shadow:0 18px 60px rgba(0,0,0,.55);color:#fff
+}
+.fatal-boot-panel strong{display:block;color:#ff9f9f;font-size:.86rem}
+.fatal-boot-panel p{margin:7px 0 12px;color:#ffd6d6;font-size:.65rem;line-height:1.5;overflow-wrap:anywhere}
+.fatal-boot-panel button{min-height:38px;padding:7px 12px;border:0;border-radius:9px;background:#ff7474;color:#210305;font-weight:900}
+html[data-app-boot="loading"] body::after{
+  content:"";position:fixed;z-index:9998;top:12px;right:12px;width:8px;height:8px;
+  border-radius:50%;background:var(--accent2);box-shadow:0 0 0 4px rgba(109,199,255,.12)
+}
+html[data-app-boot="ready"] body::after{display:none}
