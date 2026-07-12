@@ -11,7 +11,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./styles.css?v=3.6.0">
+  <link rel="stylesheet" href="./styles.css?v=4.0.0">
 </head>
 <body>
   <header class="topbar">
@@ -20,7 +20,8 @@
       <h1>Poker Mate</h1>
     </div>
     <div class="top-actions">
-      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v3.6.0</button>
+      <button id="globalQuickButton" class="top-quick-button" type="button" aria-haspopup="dialog" aria-controls="quickActionSheet" aria-label="クイック操作を開く">＋</button>
+      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v4.0.0</button>
       <button id="installBtn" class="ghost hidden">ホーム画面に追加</button>
     </div>
   </header>
@@ -32,11 +33,38 @@
           <p class="muted">累計収支（基準通貨）</p>
           <div id="heroProfit" class="hero-number">¥0</div>
           <p id="heroSub" class="muted">まだセッションがありません</p>
+          <div id="heroMeta" class="hero-meta"></div>
         </div>
         <div class="suit-mark">♠</div>
       </div>
 
-      <div class="stats-grid" id="homeStats"></div>
+      <section id="homeSetupCard" class="panel setup-card hidden">
+        <div class="setup-card-icon">♣</div>
+        <div class="setup-card-copy">
+          <p class="eyebrow">GETTING STARTED</p>
+          <h2>最初の準備を完了しましょう</h2>
+          <p id="homeSetupText" class="muted"></p>
+        </div>
+        <div id="homeSetupActions" class="setup-actions"></div>
+      </section>
+
+      <section class="panel quick-action-panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">QUICK ACTION</p>
+            <h2>すぐ使う</h2>
+          </div>
+        </div>
+        <div class="home-quick-actions">
+          <button type="button" data-quick-action="session"><span>＋</span><strong>収支を記録</strong><small>リング・MTT</small></button>
+          <button type="button" data-quick-action="chip"><span>◎</span><strong>チップ取引</strong><small>購入・換金</small></button>
+          <button type="button" data-quick-action="equity"><span>♠</span><strong>勝率計算</strong><small>カード選択式</small></button>
+          <button type="button" data-quick-action="odds"><span>%</span><strong>必要勝率</strong><small>ポットオッズ</small></button>
+        </div>
+      </section>
+
+      <div class="stats-grid home-kpi-grid" id="homeStats"></div>
+      <div id="homeInsights" class="home-insight-grid"></div>
 
       <section class="panel">
         <div class="section-head">
@@ -44,11 +72,19 @@
             <p class="eyebrow">PROFIT GRAPH</p>
             <h2>累積収支</h2>
           </div>
-          <select id="graphFilter" class="small-select" aria-label="グラフ表示">
-            <option value="all">すべて</option>
-            <option value="cash">リング</option>
-            <option value="tournament">トーナメント</option>
-          </select>
+          <div class="chart-controls">
+            <select id="graphPeriod" class="small-select" aria-label="グラフ期間">
+              <option value="30">30日</option>
+              <option value="90">90日</option>
+              <option value="year">今年</option>
+              <option value="all">全期間</option>
+            </select>
+            <select id="graphFilter" class="small-select" aria-label="グラフ種別">
+              <option value="all">すべて</option>
+              <option value="cash">リング</option>
+              <option value="tournament">トーナメント</option>
+            </select>
+          </div>
         </div>
         <div class="chart-wrap">
           <canvas id="profitChart" height="230"></canvas>
@@ -77,6 +113,11 @@
       <div class="segmented two">
         <button class="segment active" data-session-type="cash">リング</button>
         <button class="segment" data-session-type="tournament">トーナメント</button>
+      </div>
+
+      <div id="sessionStatusBar" class="session-status-bar">
+        <div><span>現在の入力</span><strong>リング</strong></div>
+        <div><span>見込み収支</span><strong>—</strong></div>
       </div>
 
       <form id="sessionForm" class="panel form-panel">
@@ -167,12 +208,31 @@
 
       <section class="panel">
         <div class="section-head">
-          <h2>履歴</h2>
-          <select id="sessionListFilter" class="small-select">
-            <option value="all">すべて</option>
-            <option value="cash">リング</option>
-            <option value="tournament">トーナメント</option>
-          </select>
+          <div>
+            <p class="eyebrow">HISTORY</p>
+            <h2>セッション履歴</h2>
+          </div>
+          <span id="sessionHistorySummary" class="summary-badge">0件</span>
+        </div>
+        <div class="history-filter-grid">
+          <label class="search-field">
+            <span>検索</span>
+            <input id="sessionSearch" type="search" placeholder="店舗・ステークス・メモ">
+          </label>
+          <label>
+            種別
+            <select id="sessionListFilter">
+              <option value="all">すべて</option>
+              <option value="cash">リング</option>
+              <option value="tournament">トーナメント</option>
+            </select>
+          </label>
+          <label>
+            店舗
+            <select id="sessionVenueFilter">
+              <option value="all">すべての店舗</option>
+            </select>
+          </label>
         </div>
         <div id="sessionList" class="card-list"></div>
       </section>
@@ -182,11 +242,16 @@
       <div class="page-title">
         <div>
           <p class="eyebrow">VENUES & CHIPS</p>
-          <h2>店舗別成績・チップ残高</h2>
+          <h2>店舗とチップ</h2>
         </div>
       </div>
 
-      <form id="venueForm" class="panel form-panel">
+      <div class="segmented two view-switcher">
+        <button class="segment active" data-venue-view="list">店舗一覧</button>
+        <button class="segment" data-venue-view="chips">チップ購入・換金</button>
+      </div>
+
+      <form id="venueForm" data-venue-section="list" class="panel form-panel">
         <input id="venueId" type="hidden">
         <div class="grid two">
           <label>店舗名
@@ -211,7 +276,7 @@
       </form>
 
 
-      <section class="panel">
+      <section id="chipPanel" class="panel hidden" data-venue-section="chips">
         <div class="section-head">
           <div>
             <p class="eyebrow">CHIP TRANSACTION</p>
@@ -258,7 +323,19 @@
         <p class="hint">購入・換金は店舗のチップ残高だけを動かします。ポーカー資金全体のバンクロールは、現金とチップの持ち方が変わるだけなので増減しません。外部資金を追加した場合は、バンクロール画面でも「入金」を記録してください。</p>
       </section>
 
-      <div id="venueList" class="card-list"></div>
+      <div class="venue-list-toolbar" data-venue-section="list">
+        <div>
+          <p class="eyebrow">VENUE SUMMARY</p>
+          <h3>登録店舗</h3>
+        </div>
+        <select id="venueSort" class="small-select" aria-label="店舗の並び順">
+          <option value="recent">登録順</option>
+          <option value="profit">収支順</option>
+          <option value="balance">チップ残高順</option>
+          <option value="name">名前順</option>
+        </select>
+      </div>
+      <div id="venueList" class="card-list" data-venue-section="list"></div>
     </section>
 
     <section id="ranges" class="page">
@@ -296,12 +373,12 @@
         </div>
       </div>
 
-      <div class="segmented tool-tabs">
-        <button class="segment active" data-tool="odds">ベット対応</button>
-        <button class="segment" data-tool="raise">対レイズ</button>
-        <button class="segment" data-tool="equity">勝率計算</button>
-        <button class="segment" data-tool="draw">アウト</button>
-        <button class="segment" data-tool="power">PN</button>
+      <div class="tool-launcher-grid tool-tabs" aria-label="ツール選択">
+        <button class="tool-launcher active" data-tool="odds" type="button"><span>%</span><div><strong>ベット対応</strong><small>コールの必要勝率</small></div></button>
+        <button class="tool-launcher" data-tool="raise" type="button"><span>↗</span><div><strong>対レイズ</strong><small>追加コール額</small></div></button>
+        <button class="tool-launcher" data-tool="equity" type="button"><span>♠</span><div><strong>勝率計算</strong><small>ハンド対ハンド</small></div></button>
+        <button class="tool-launcher" data-tool="draw" type="button"><span>♦</span><div><strong>アウト</strong><small>ドロー完成率</small></div></button>
+        <button class="tool-launcher" data-tool="power" type="button"><span>PN</span><div><strong>パワーナンバー</strong><small>プッシュ目安</small></div></button>
       </div>
 
       <section id="oddsTool" class="panel">
@@ -505,10 +582,17 @@
       <div class="page-title">
         <div>
           <p class="eyebrow">REVIEW & DATA</p>
-          <h2>ハンドメモ・設定</h2>
+          <h2>振り返り・資金・設定</h2>
         </div>
       </div>
 
+      <div class="segmented three more-view-tabs">
+        <button class="segment active" data-more-view="review">振り返り</button>
+        <button class="segment" data-more-view="bankroll">バンクロール</button>
+        <button class="segment" data-more-view="settings">設定・データ</button>
+      </div>
+
+      <div id="moreReviewView" data-more-section="review">
       <form id="handForm" class="panel form-panel">
         <div class="grid two">
           <label>日付
@@ -539,8 +623,9 @@
         <button class="primary" type="submit">ハンドメモを保存</button>
       </form>
       <div id="handList" class="card-list"></div>
+      </div>
 
-
+      <div id="moreBankrollView" class="hidden" data-more-section="bankroll">
       <section class="panel bankroll-panel">
         <div class="section-head">
           <div>
@@ -604,7 +689,9 @@
         <div id="bankrollTransactionList" class="card-list compact-list"></div>
         <p class="hint">現在資金は「開始資金＋登録済みセッションの基準通貨収支＋入金－出金」で計算します。チップ残高とは別管理です。</p>
       </section>
+      </div>
 
+      <div id="moreSettingsView" class="hidden" data-more-section="settings">
       <section id="settingsPanel" class="panel">
         <h3>設定</h3>
         <div class="grid two">
@@ -641,7 +728,7 @@
         </div>
         <div id="ringStakeList" class="ring-stake-list"></div>
 
-        <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal"><span>アプリバージョン</span><strong id="settingsVersion">v3.6.0 <span aria-hidden="true">›</span></strong></button>
+        <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal"><span>アプリバージョン</span><strong id="settingsVersion">v4.0.0 <span aria-hidden="true">›</span></strong></button>
         <button id="saveSettingsBtn" class="secondary" type="button">設定を保存</button>
       </section>
 
@@ -665,10 +752,32 @@
           <li>疲労・飲酒・ティルトを感じたら結果に関係なく終了する</li>
         </ul>
       </section>
+      </div>
     </section>
   </main>
 
 
+
+
+  <div id="quickActionBackdrop" class="quick-action-backdrop hidden"></div>
+  <section id="quickActionSheet" class="quick-action-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="quickActionTitle">
+    <div class="quick-sheet-handle"></div>
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">QUICK ACTION</p>
+        <h2 id="quickActionTitle">何をしますか？</h2>
+      </div>
+      <button id="closeQuickActionBtn" class="ghost compact-button" type="button">閉じる</button>
+    </div>
+    <div class="quick-sheet-grid">
+      <button type="button" data-quick-action="session"><span>＋</span><strong>収支を記録</strong><small>リング／トーナメント</small></button>
+      <button type="button" data-quick-action="chip"><span>◎</span><strong>チップ購入・換金</strong><small>店舗残高を更新</small></button>
+      <button type="button" data-quick-action="equity"><span>♠</span><strong>勝率計算</strong><small>カードを選択</small></button>
+      <button type="button" data-quick-action="odds"><span>%</span><strong>必要勝率</strong><small>ベットへ対応</small></button>
+      <button type="button" data-quick-action="bankroll"><span>¥</span><strong>バンクロール</strong><small>資金状況を確認</small></button>
+      <button type="button" data-quick-action="hand"><span>✎</span><strong>ハンドメモ</strong><small>迷った局面を保存</small></button>
+    </div>
+  </section>
 
   <div id="versionHistoryBackdrop" class="version-history-backdrop hidden"></div>
   <section id="versionHistoryModal" class="version-history-modal hidden" role="dialog" aria-modal="true" aria-labelledby="versionHistoryTitle">
@@ -682,7 +791,7 @@
     <div class="current-version-card">
       <div>
         <span class="current-version-label">現在のバージョン</span>
-        <strong id="currentVersionInModal">v3.6.0</strong>
+        <strong id="currentVersionInModal">v4.0.0</strong>
       </div>
       <span class="up-to-date-badge">最新版</span>
     </div>
@@ -759,6 +868,6 @@
   </nav>
 
   <div id="toast" class="toast" role="status"></div>
-  <script src="./app.js?v=3.6.0"></script>
+  <script src="./app.js?v=4.0.0"></script>
 </body>
 </html>

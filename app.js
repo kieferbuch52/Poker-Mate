@@ -1,11 +1,26 @@
 'use strict';
 
-const APP_VERSION = '3.6.0';
+const APP_VERSION = '4.0.0';
 const APP_CHANGELOG = [
+  {
+    version:'4.0.0',
+    title:'UI・利用動線の全面改修',
+    current:true,
+    changes:[
+      'ホームをダッシュボード化し、クイック操作・資金・今月収支・チップ総額を集約',
+      'よく使う操作へどの画面からでも移動できるクイックボタンを追加',
+      '収支履歴へ店舗・種別・キーワード検索と集計を追加',
+      '最後に使った店舗・ステークス・種別を次回入力へ引き継ぐよう改善',
+      '店舗一覧とチップ取引を分離し、店舗カードから購入・換金へ直接移動可能に変更',
+      '計算ツールを説明付きのランチャーカードへ刷新',
+      'その他画面を振り返り・バンクロール・設定の3画面へ整理',
+      '収支グラフに30日・90日・今年・全期間の切り替えを追加'
+    ]
+  },
   {
     version:'3.6.0',
     title:'ドラッグ並び替えと表示修正',
-    current:true,
+    current:false,
     changes:[
       'リングステークス候補をドラッグ＆ドロップで並び替え可能に変更',
       'ホームの直近セッションから編集・削除できない不具合を修正',
@@ -126,6 +141,7 @@ const DEFAULT_RING_STAKES = [
   '2000/5000','5000/10000','10000/20000'
 ];
 const COLLAPSE_STORAGE_KEY = 'pokerMateCollapseV1';
+const UI_STORAGE_KEY = 'pokerMateUiV2';
 
 const powerMatrix = [
   [80,80,80,80,80,50,37,32,28,31,27,26,24],
@@ -175,7 +191,35 @@ const bbDefenseRanges = {
   }
 };
 
+
+function loadUiState(){
+  const defaults={
+    lastTool:'odds',
+    venueView:'list',
+    moreView:'review',
+    graphPeriod:'30',
+    venueSort:'recent',
+    lastSessionType:'cash',
+    lastVenueId:'',
+    lastStake:''
+  };
+  try{
+    const parsed=JSON.parse(localStorage.getItem(UI_STORAGE_KEY));
+    return {...defaults,...(parsed&&typeof parsed==='object'?parsed:{})};
+  }catch(error){
+    return defaults;
+  }
+}
+function saveUiState(){
+  try{localStorage.setItem(UI_STORAGE_KEY,JSON.stringify(uiState));}catch(error){}
+}
+function updateUiState(values){
+  uiState={...uiState,...values};
+  saveUiState();
+}
+
 let state = loadState();
+let uiState = loadUiState();
 let currentSessionType = 'cash';
 let currentRangePosition = 'UTG';
 let currentRangeMode = 'rfi';
@@ -352,17 +396,54 @@ function showToast(msg){
 function go(pageId){
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id===pageId));
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.go===pageId));
+  document.body.dataset.page=pageId;
   window.scrollTo({top:0,behavior:'smooth'});
-  if(pageId==='home') renderHome();
-  if(pageId==='sessions') renderSessions();
-  if(pageId==='venues') renderVenues();
-  if(pageId==='ranges') renderRangeGrid();
-  if(pageId==='tools'){ renderOdds(); renderRaiseOdds(); renderDraw(); renderPower(); }
-  if(pageId==='more'){ renderHands(); renderBankroll(); renderSettings(); }
+  if(pageId==='home')renderHome();
+  if(pageId==='sessions')renderSessions();
+  if(pageId==='venues'){renderVenues();setVenueView(uiState.venueView||'list',false);}
+  if(pageId==='ranges')renderRangeGrid();
+  if(pageId==='tools'){
+    renderOdds();renderRaiseOdds();renderDraw();renderPower();
+    setTool(uiState.lastTool||'odds',false);
+  }
+  if(pageId==='more'){
+    renderHands();renderBankroll();renderSettings();
+    setMoreView(uiState.moreView||'review',false);
+  }
 }
 document.addEventListener('click',e=>{
   const target=e.target.closest('[data-go]');
   if(target) go(target.dataset.go);
+});
+
+
+function setVenueView(view,save=true){
+  const resolved=view==='chips'?'chips':'list';
+  document.querySelectorAll('[data-venue-view]').forEach(button=>{
+    button.classList.toggle('active',button.dataset.venueView===resolved);
+  });
+  document.querySelectorAll('[data-venue-section]').forEach(section=>{
+    section.classList.toggle('hidden',section.dataset.venueSection!==resolved);
+  });
+  if(save)updateUiState({venueView:resolved});
+}
+document.querySelectorAll('[data-venue-view]').forEach(button=>{
+  button.addEventListener('click',()=>setVenueView(button.dataset.venueView));
+});
+
+function setMoreView(view,save=true){
+  const allowed=['review','bankroll','settings'];
+  const resolved=allowed.includes(view)?view:'review';
+  document.querySelectorAll('[data-more-view]').forEach(button=>{
+    button.classList.toggle('active',button.dataset.moreView===resolved);
+  });
+  document.querySelectorAll('[data-more-section]').forEach(section=>{
+    section.classList.toggle('hidden',section.dataset.moreSection!==resolved);
+  });
+  if(save)updateUiState({moreView:resolved});
+}
+document.querySelectorAll('[data-more-view]').forEach(button=>{
+  button.addEventListener('click',()=>setMoreView(button.dataset.moreView));
 });
 
 function renderHome(){
@@ -373,22 +454,71 @@ function renderHome(){
   const cashProfit=cash.reduce((a,s)=>a+sessionProfitBase(s),0);
   const tournamentCost=tourn.reduce((a,s)=>a+num(s.costLocal)*num(s.fxRate),0);
   const tournamentProfit=tourn.reduce((a,s)=>a+sessionProfitBase(s),0);
+  const monthKey=today().slice(0,7);
+  const monthSessions=state.sessions.filter(s=>String(s.date||'').startsWith(monthKey));
+  const monthProfit=monthSessions.reduce((sum,s)=>sum+sessionProfitBase(s),0);
+  const chipValue=state.venues.reduce((sum,venue)=>sum+num(venue.chipBalance)*num(venue.fxRate),0);
+  const bankroll=currentBankroll();
+  const venuePerformance=state.venues.map(venue=>({
+    venue,
+    profit:state.sessions.filter(s=>s.venueId===venue.id).reduce((sum,s)=>sum+sessionProfitBase(s),0)
+  })).sort((a,b)=>b.profit-a.profit);
+  const bestVenue=venuePerformance.find(item=>state.sessions.some(s=>s.venueId===item.venue.id));
+
   document.getElementById('heroProfit').textContent=signed(total,state.settings.baseCurrency);
   document.getElementById('heroProfit').className=`hero-number ${total>=0?'positive':'negative'}`;
   document.getElementById('heroSub').textContent=state.sessions.length?`${state.sessions.length}セッションを記録`:'まだセッションがありません';
+  document.getElementById('heroMeta').innerHTML=`
+    <span class="${monthProfit>=0?'positive':'negative'}">今月 ${signed(monthProfit,state.settings.baseCurrency)}</span>
+    <span>資金 ${fmt(bankroll,state.settings.baseCurrency)}</span>`;
+
   document.getElementById('homeStats').innerHTML=`
     <div class="stat-card"><strong>${state.sessions.length}</strong><span>総セッション</span></div>
     <div class="stat-card"><strong>${cashHours?fmt(cashProfit/cashHours,state.settings.baseCurrency):'—'}</strong><span>リング時給</span></div>
     <div class="stat-card"><strong>${tournamentCost?pct(tournamentProfit/tournamentCost*100):'—'}</strong><span>MTT ROI</span></div>`;
+
+  document.getElementById('homeInsights').innerHTML=`
+    <article class="insight-card"><span>現在のバンクロール</span><strong class="${bankroll>=0?'positive':'negative'}">${fmt(bankroll,state.settings.baseCurrency)}</strong><small>開始資金・収支・入出金</small></article>
+    <article class="insight-card"><span>店舗チップ総額</span><strong>${fmt(chipValue,state.settings.baseCurrency)}</strong><small>各店舗残高を換算</small></article>
+    <article class="insight-card"><span>今月の収支</span><strong class="${monthProfit>=0?'positive':'negative'}">${signed(monthProfit,state.settings.baseCurrency)}</strong><small>${monthSessions.length}セッション</small></article>
+    <article class="insight-card"><span>好成績の店舗</span><strong>${bestVenue?esc(bestVenue.venue.name):'—'}</strong><small>${bestVenue?signed(bestVenue.profit,state.settings.baseCurrency):'データなし'}</small></article>`;
+
+  const setupItems=[];
+  if(!state.venues.length)setupItems.push({label:'店舗を登録',action:'venue-setup'});
+  if(!normalizeRingStakes(state.settings.ringStakes).length)setupItems.push({label:'ステークスを設定',action:'stake-setup'});
+  if(!num(state.bankroll.startingAmount))setupItems.push({label:'開始資金を設定',action:'bankroll'});
+  const setupCard=document.getElementById('homeSetupCard');
+  setupCard.classList.toggle('hidden',setupItems.length===0);
+  document.getElementById('homeSetupText').textContent=setupItems.length
+    ?`あと${setupItems.length}項目を設定すると、記録がさらにスムーズになります。`
+    :'';
+  document.getElementById('homeSetupActions').innerHTML=setupItems.map(item=>
+    `<button type="button" data-quick-action="${item.action}">${item.label}<span>›</span></button>`
+  ).join('');
+
   const recent=[...state.sessions].sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt-a.createdAt).slice(0,4);
   const wrap=document.getElementById('recentSessions');
-  wrap.innerHTML=recent.length?recent.map(sessionCardHtml).join(''):'<p class="empty muted">まだ記録がありません。</p>';
+  wrap.innerHTML=recent.length?recent.map(sessionCardHtml).join(''):'<div class="empty-state"><strong>最初のセッションを記録しましょう</strong><p>ホームの「収支を記録」からすぐ始められます。</p></div>';
+
+  document.getElementById('graphPeriod').value=uiState.graphPeriod||'30';
   drawProfitChart();
   updateLossLimitStatus();
 }
 function drawProfitChart(){
   const filter=document.getElementById('graphFilter').value;
-  const sessions=[...state.sessions].filter(s=>filter==='all'||s.type===filter).sort((a,b)=>a.date.localeCompare(b.date)||a.createdAt-b.createdAt);
+  const period=document.getElementById('graphPeriod').value;
+  updateUiState({graphPeriod:period});
+  const now=new Date(`${today()}T00:00:00`);
+  const threshold=new Date(now);
+  if(period==='30')threshold.setDate(threshold.getDate()-29);
+  if(period==='90')threshold.setDate(threshold.getDate()-89);
+  const yearPrefix=today().slice(0,4);
+  const sessions=[...state.sessions].filter(session=>{
+    if(filter!=='all'&&session.type!==filter)return false;
+    if(period==='all')return true;
+    if(period==='year')return String(session.date||'').startsWith(yearPrefix);
+    return new Date(`${session.date}T00:00:00`)>=threshold;
+  }).sort((a,b)=>a.date.localeCompare(b.date)||a.createdAt-b.createdAt);
   const canvas=document.getElementById('profitChart');
   const empty=document.getElementById('chartEmpty');
   if(!sessions.length){ canvas.classList.add('hidden');empty.classList.remove('hidden');return; }
@@ -422,6 +552,7 @@ function compactNumber(n){
 }
 window.addEventListener('resize',()=>{if(document.getElementById('home').classList.contains('active'))drawProfitChart()});
 document.getElementById('graphFilter').addEventListener('change',drawProfitChart);
+document.getElementById('graphPeriod').addEventListener('change',drawProfitChart);
 
 function setSessionType(type){
   currentSessionType=type;
@@ -463,16 +594,29 @@ function updateSessionPreview(){
   const c=calculateFormProfit(),fx=num(document.getElementById('sessionFx').value)||1;
   const venue=venueById(document.getElementById('sessionVenue').value),currency=venue?.currency||'LOCAL';
   const el=document.getElementById('sessionPreview');
-  el.innerHTML=`現地収支：<strong class="${c.profit>=0?'positive':'negative'}">${signedPoints(c.profit,currency)}</strong><br>基準通貨：<strong>${signed(c.profit*fx,state.settings.baseCurrency)}</strong>`;
+  const baseProfit=c.profit*fx;
+  el.innerHTML=`現地収支：<strong class="${c.profit>=0?'positive':'negative'}">${signedPoints(c.profit,currency)}</strong><br>基準通貨：<strong>${signed(baseProfit,state.settings.baseCurrency)}</strong>`;
+  const status=document.getElementById('sessionStatusBar');
+  if(status){
+    const venue=venueById(document.getElementById('sessionVenue').value);
+    const label=currentSessionType==='cash'
+      ?[document.getElementById('cashStakes').value||'ステークス未選択',venue?.name||'店舗未選択'].join('・')
+      :[document.getElementById('tournamentName').value||'トーナメント',venue?.name||'店舗未選択'].join('・');
+    status.innerHTML=`<div><span>現在の入力</span><strong>${esc(label)}</strong></div><div><span>見込み収支</span><strong class="${baseProfit>=0?'positive':'negative'}">${signed(baseProfit,state.settings.baseCurrency)}</strong></div>`;
+  }
 }
-['cashBuyIn','cashOut','sessionExpenses','tournamentBuyIn','tournamentReentry','tournamentPrize','sessionFx'].forEach(id=>document.getElementById(id).addEventListener('input',updateSessionPreview));
+['cashBuyIn','cashOut','sessionExpenses','tournamentBuyIn','tournamentReentry','tournamentPrize','sessionFx','cashStakes','tournamentName'].forEach(id=>{
+  const element=document.getElementById(id);
+  element.addEventListener('input',updateSessionPreview);
+  element.addEventListener('change',updateSessionPreview);
+});
 
 function ensureCashStakeOption(value){
   renderRingStakeOptions(value);
 }
 function resetSessionForm(){
   document.getElementById('sessionForm').reset();
-  renderRingStakeOptions('');
+  renderRingStakeOptions(uiState.lastStake||'');
   document.getElementById('sessionId').value='';
   document.getElementById('sessionDate').value=today();
   document.getElementById('sessionExpenses').value=0;
@@ -480,7 +624,16 @@ function resetSessionForm(){
   document.getElementById('tournamentPrize').value=0;
   document.getElementById('cancelEditBtn').classList.add('hidden');
   document.getElementById('sessionSubmit').textContent='セッションを保存';
-  setSessionType('cash');renderVenueOptions();updateSessionPreview();
+  setSessionType(uiState.lastSessionType||'cash');
+  renderVenueOptions();
+  if(uiState.lastVenueId&&state.venues.some(v=>v.id===uiState.lastVenueId)){
+    document.getElementById('sessionVenue').value=uiState.lastVenueId;
+    updateFxFromVenue();
+  }
+  if(uiState.lastStake&&[...document.getElementById('cashStakes').options].some(o=>o.value===uiState.lastStake)){
+    document.getElementById('cashStakes').value=uiState.lastStake;
+  }
+  updateSessionPreview();
 }
 document.getElementById('cancelEditBtn').addEventListener('click',resetSessionForm);
 
@@ -514,6 +667,11 @@ document.getElementById('sessionForm').addEventListener('submit',e=>{
     const v=venueById(venueId);if(v)v.chipBalance=num(v.chipBalance)+session.chipDelta;
   }
   if(editingId)state.sessions=state.sessions.map(s=>s.id===editingId?session:s);else state.sessions.push(session);
+  updateUiState({
+    lastSessionType:currentSessionType,
+    lastVenueId:venueId,
+    lastStake:currentSessionType==='cash'?session.stakes:uiState.lastStake
+  });
   saveState();resetSessionForm();renderSessions();renderHome();showToast(editingId?'更新しました':'保存しました');
 });
 
@@ -529,14 +687,39 @@ function sessionCardHtml(s){
     <div class="log-actions"><button class="mini-btn" data-edit-session="${s.id}">編集</button><button class="mini-btn delete" data-delete-session="${s.id}">削除</button></div>
   </article>`;
 }
+function renderSessionVenueFilter(){
+  const select=document.getElementById('sessionVenueFilter');
+  if(!select)return;
+  const previous=select.value||'all';
+  select.innerHTML=`<option value="all">すべての店舗</option>${state.venues.map(v=>`<option value="${esc(v.id)}">${esc(v.name)}</option>`).join('')}`;
+  select.value=previous==='all'||state.venues.some(v=>v.id===previous)?previous:'all';
+}
 function renderSessions(){
   renderVenueOptions();
   renderRingStakeOptions(document.getElementById('cashStakes').value);
-  const filter=document.getElementById('sessionListFilter').value;
-  const list=[...state.sessions].filter(s=>filter==='all'||s.type===filter).sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt-a.createdAt);
-  document.getElementById('sessionList').innerHTML=list.length?list.map(sessionCardHtml).join(''):'<p class="empty muted">まだ記録がありません。</p>';
+  renderSessionVenueFilter();
+  const typeFilter=document.getElementById('sessionListFilter').value;
+  const venueFilter=document.getElementById('sessionVenueFilter').value;
+  const search=(document.getElementById('sessionSearch').value||'').trim().toLowerCase();
+  const list=[...state.sessions].filter(session=>{
+    if(typeFilter!=='all'&&session.type!==typeFilter)return false;
+    if(venueFilter!=='all'&&session.venueId!==venueFilter)return false;
+    if(!search)return true;
+    const venue=venueById(session.venueId);
+    const haystack=[
+      session.date,session.stakes,session.tournamentName,session.notes,
+      venue?.name,venue?.currency
+    ].join(' ').toLowerCase();
+    return haystack.includes(search);
+  }).sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt-a.createdAt);
+  const total=list.reduce((sum,s)=>sum+sessionProfitBase(s),0);
+  document.getElementById('sessionHistorySummary').textContent=`${list.length}件・${signed(total,state.settings.baseCurrency)}`;
+  document.getElementById('sessionList').innerHTML=list.length
+    ?list.map(sessionCardHtml).join('')
+    :'<div class="empty-state"><strong>条件に合う履歴がありません</strong><p>検索条件を変更してください。</p></div>';
 }
-document.getElementById('sessionListFilter').addEventListener('change',renderSessions);
+['sessionListFilter','sessionVenueFilter'].forEach(id=>document.getElementById(id).addEventListener('change',renderSessions));
+document.getElementById('sessionSearch').addEventListener('input',renderSessions);
 function handleSessionActionClick(event){
   const edit=event.target.closest('[data-edit-session]');
   const del=event.target.closest('[data-delete-session]');
@@ -718,7 +901,18 @@ function renderVenues(){
   renderChipTransactionOptions();
   renderChipTransactionHistory();
   const wrap=document.getElementById('venueList');
-  wrap.innerHTML=state.venues.length?state.venues.map(v=>{
+  const sort=document.getElementById('venueSort')?.value||uiState.venueSort||'recent';
+  if(document.getElementById('venueSort'))document.getElementById('venueSort').value=sort;
+  updateUiState({venueSort:sort});
+  const venues=[...state.venues].sort((a,b)=>{
+    if(sort==='name')return a.name.localeCompare(b.name,'ja');
+    const profitA=state.sessions.filter(s=>s.venueId===a.id).reduce((sum,s)=>sum+sessionProfitBase(s),0);
+    const profitB=state.sessions.filter(s=>s.venueId===b.id).reduce((sum,s)=>sum+sessionProfitBase(s),0);
+    if(sort==='profit')return profitB-profitA;
+    if(sort==='balance')return num(b.chipBalance)*num(b.fxRate)-num(a.chipBalance)*num(a.fxRate);
+    return state.venues.indexOf(a)-state.venues.indexOf(b);
+  });
+  wrap.innerHTML=venues.length?venues.map(v=>{
     const sessions=state.sessions.filter(s=>s.venueId===v.id),profit=sessions.reduce((a,s)=>a+sessionProfitLocal(s),0);
     const cash=sessions.filter(s=>s.type==='cash'),hours=cash.reduce((a,s)=>a+num(s.hours),0);
     const chipTx=state.chipTransactions.filter(t=>t.venueId===v.id);
@@ -731,6 +925,10 @@ function renderVenues(){
       <div class="venue-stats"><div><strong>${sessions.length}</strong><span>セッション</span></div><div><strong>${hours?fmtPoints(cash.reduce((a,s)=>a+sessionProfitLocal(s),0)/hours,v.currency):'—'}</strong><span>リング時給</span></div><div><strong>${sessions.filter(s=>s.type==='tournament').length}</strong><span>MTT回数</span></div></div>
       ${chipTx.length?`<div class="chip-flow-summary"><span>購入 ${fmtPoints(purchased,v.currency)}</span><span>換金 ${fmtPoints(cashedOut,v.currency)}</span></div>`:''}
       ${v.notes?`<p class="log-note">${esc(v.notes)}</p>`:''}
+      <div class="venue-quick-actions">
+        <button type="button" data-chip-action="purchase" data-chip-venue="${v.id}">＋ チップ購入</button>
+        <button type="button" data-chip-action="cashout" data-chip-venue="${v.id}">− 換金</button>
+      </div>
       <div class="log-actions"><button class="mini-btn" data-edit-venue="${v.id}">編集</button><button class="mini-btn delete" data-delete-venue="${v.id}">削除</button></div>
     </article>`;
   }).join(''):'<p class="empty muted">店舗を登録すると、店舗別成績とチップ残高を管理できます。</p>';
@@ -750,6 +948,21 @@ document.getElementById('venueList').addEventListener('click',e=>{
     if(state.chipTransactions.some(t=>t.venueId===id)){alert('この店舗にはチップ購入・換金履歴があります。先に履歴を削除してください。');return;}
     if(confirm('この店舗を削除しますか？')){state.venues=state.venues.filter(v=>v.id!==id);saveState();renderVenues();}
   }
+});
+
+
+document.getElementById('venueSort').addEventListener('change',renderVenues);
+document.getElementById('venueList').addEventListener('click',event=>{
+  const chipButton=event.target.closest('[data-chip-action]');
+  if(!chipButton)return;
+  setVenueView('chips');
+  const venueId=chipButton.dataset.chipVenue;
+  const type=chipButton.dataset.chipAction;
+  document.getElementById('chipTransactionVenue').value=venueId;
+  document.getElementById('chipTransactionType').value=type;
+  updateChipTransactionPreview();
+  openCollapsible('chip-input');
+  document.getElementById('chipPanel').scrollIntoView({behavior:'smooth',block:'start'});
 });
 
 function handLabel(row,col){
@@ -790,13 +1003,14 @@ document.querySelectorAll('[data-range-mode]').forEach(b=>b.addEventListener('cl
 }));
 document.querySelectorAll('[data-position]').forEach(b=>b.addEventListener('click',()=>{currentRangePosition=b.dataset.position;renderRangeGrid()}));
 
-function setTool(tool){
+function setTool(tool,save=true){
   document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool===tool));
   document.getElementById('oddsTool').classList.toggle('hidden',tool!=='odds');
   document.getElementById('raiseTool').classList.toggle('hidden',tool!=='raise');
   document.getElementById('equityTool').classList.toggle('hidden',tool!=='equity');
   document.getElementById('drawTool').classList.toggle('hidden',tool!=='draw');
   document.getElementById('powerTool').classList.toggle('hidden',tool!=='power');
+  if(save)updateUiState({lastTool:tool});
 }
 document.querySelector('.tool-tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tool]');if(b)setTool(b.dataset.tool);});
 
@@ -1492,6 +1706,54 @@ function initializeCollapsibleSections(){
   });
 }
 
+
+function openQuickActionSheet(){
+  document.getElementById('quickActionBackdrop').classList.remove('hidden');
+  document.getElementById('quickActionSheet').classList.remove('hidden');
+  document.body.classList.add('modal-open');
+}
+function closeQuickActionSheet(){
+  document.getElementById('quickActionBackdrop').classList.add('hidden');
+  document.getElementById('quickActionSheet').classList.add('hidden');
+  document.body.classList.remove('modal-open');
+}
+function runQuickAction(action){
+  closeQuickActionSheet();
+  if(action==='session'){
+    go('sessions');openCollapsible('session-input');
+    setTimeout(()=>document.getElementById('sessionForm').scrollIntoView({behavior:'smooth',block:'start'}),60);
+  }
+  if(action==='chip'){
+    go('venues');setVenueView('chips');openCollapsible('chip-input');
+  }
+  if(action==='equity'){
+    go('tools');setTool('equity');
+  }
+  if(action==='odds'){
+    go('tools');setTool('odds');
+  }
+  if(action==='bankroll'){
+    go('more');setMoreView('bankroll');openCollapsible('bankroll-settings');
+  }
+  if(action==='hand'){
+    go('more');setMoreView('review');openCollapsible('hand-input');
+  }
+  if(action==='venue-setup'){
+    go('venues');setVenueView('list');openCollapsible('venue-input');
+  }
+  if(action==='stake-setup'){
+    go('more');setMoreView('settings');openCollapsible('app-settings');
+    setTimeout(()=>document.getElementById('ringStakeForm').scrollIntoView({behavior:'smooth',block:'center'}),80);
+  }
+}
+document.getElementById('globalQuickButton').addEventListener('click',openQuickActionSheet);
+document.getElementById('closeQuickActionBtn').addEventListener('click',closeQuickActionSheet);
+document.getElementById('quickActionBackdrop').addEventListener('click',closeQuickActionSheet);
+document.addEventListener('click',event=>{
+  const button=event.target.closest('[data-quick-action]');
+  if(button)runQuickAction(button.dataset.quickAction);
+});
+
 function renderVersionHistory(){
   const list=document.getElementById('versionHistoryList');
   document.getElementById('currentVersionInModal').textContent=`v${APP_VERSION}`;
@@ -1745,6 +2007,9 @@ if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.se
 
 function renderAll(){
   renderHome();renderSessions();renderVenues();renderRangeGrid();renderOdds();renderRaiseOdds();renderDraw();renderPower();renderHands();renderBankroll();renderSettings();
+  setVenueView(uiState.venueView||'list',false);
+  setMoreView(uiState.moreView||'review',false);
+  setTool(uiState.lastTool||'odds',false);
 }
 document.getElementById('sessionDate').value=today();document.getElementById('handDate').value=today();document.getElementById('bankrollTransactionDate').value=today();document.getElementById('chipTransactionDate').value=today();
 buildPnHandPicker();initializeSmartNumberInputs();initializeCollapsibleSections();resetSessionForm();renderAll();renderVisualCards();
