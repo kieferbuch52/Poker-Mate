@@ -11,7 +11,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./styles.css?v=5.0.0">
+  <link rel="stylesheet" href="./styles.css?v=5.1.0">
 </head>
 <body>
   <header class="topbar">
@@ -21,7 +21,7 @@
     </div>
     <div class="top-actions">
       <button id="globalQuickButton" class="top-quick-button" type="button" aria-haspopup="dialog" aria-controls="quickActionSheet" aria-label="クイック操作を開く">＋</button>
-      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v5.0.0</button>
+      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v5.1.0</button>
       <button id="installBtn" class="ghost hidden">ホーム画面に追加</button>
     </div>
   </header>
@@ -468,13 +468,16 @@
           <div id="raiseResult" class="tool-result"></div>
         </div>
 
-        <div class="unified-raise-table">
+        <div class="odds-reference-table">
           <div class="section-head">
-            <div><p class="eyebrow">RAISE REFERENCE</p><h3>レイズサイズ別 必要勝率表</h3></div>
-            <span id="raiseTableContext" class="summary-badge">現在のベット基準</span>
+            <div>
+              <p id="oddsReferenceEyebrow" class="eyebrow">BET REFERENCE</p>
+              <h3 id="oddsReferenceTitle">ベットサイズ別 必要勝率表</h3>
+            </div>
+            <span id="oddsReferenceContext" class="summary-badge">ポット比</span>
           </div>
-          <div id="raiseOddsTable" class="odds-table"></div>
-          <p class="hint">両モード共通の表です。現在入力中のポットと自分のベット額を基準に、Raise toの倍率ごとの追加コール額と必要勝率を表示します。</p>
+          <div id="oddsReferenceTable" class="odds-table"></div>
+          <p id="oddsReferenceHint" class="hint">相手のベット額と自分のコール額が同額の場合の必要勝率です。</p>
         </div>
       </section>
 
@@ -595,7 +598,7 @@
 
         <div class="pn-compact-controls" aria-label="パワーナンバー条件">
           <label>
-            <span>スタック</span>
+            <span>Stack</span>
             <input id="pnStack" type="number" inputmode="decimal" min="0" value="16000">
           </label>
           <label>
@@ -607,11 +610,11 @@
             <input id="pnBb" type="number" inputmode="decimal" min="0" value="2000" aria-label="BB">
           </label>
           <label>
-            <span>アンティ計</span>
+            <span>Ante</span>
             <input id="pnAnteTotal" type="number" inputmode="decimal" min="0" value="2000">
           </label>
           <label>
-            <span>後ろ人数</span>
+            <span>後人数</span>
             <input id="pnBehind" type="number" inputmode="numeric" min="1" max="9" value="3">
           </label>
         </div>
@@ -826,7 +829,7 @@
         <button id="saveSettingsBtn" class="secondary" type="button">基本設定を保存</button>
         <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">
           <span>アプリバージョン</span>
-          <strong id="settingsVersion">v5.0.0 <span aria-hidden="true">›</span></strong>
+          <strong id="settingsVersion">v5.1.0 <span aria-hidden="true">›</span></strong>
         </button>
       </section>
 
@@ -893,7 +896,7 @@
     <div class="current-version-card">
       <div>
         <span class="current-version-label">現在のバージョン</span>
-        <strong id="currentVersionInModal">v5.0.0</strong>
+        <strong id="currentVersionInModal">v5.1.0</strong>
       </div>
       <span class="up-to-date-badge">最新版</span>
     </div>
@@ -970,7 +973,7 @@
   </nav>
 
   <div id="toast" class="toast" role="status"></div>
-  <script src="./core-utils.js?v=5.0.0"></script>
-  <script src="./app.js?v=5.0.0"></script>
+  <script src="./core-utils.js?v=5.1.0"></script>
+  <script src="./app.js?v=5.1.0"></script>
 </body>
 </html>

@@ -1398,3 +1398,57 @@ main{width:min(860px,100%);padding:14px 14px 20px}
 .integrity-result{margin-top:10px;padding:11px;border:1px solid var(--line);border-radius:11px;background:rgba(255,255,255,.03);font-size:.7rem;line-height:1.5}.integrity-result ul{margin:8px 0 0;padding-left:18px}
 #sessionChipModeField{padding:10px;border:1px solid rgba(109,199,255,.17);border-radius:12px;background:rgba(109,199,255,.045)}
 @media(max-width:480px){.asset-breakdown{grid-template-columns:1fr}.odds-compact-inputs{gap:4px}.odds-compact-inputs input{font-size:.7rem}.backup-status{grid-template-columns:1fr}}
+
+
+/* v5.1: keep all PN condition inputs on a single row */
+.pn-compact-controls{
+  grid-template-columns:minmax(68px,1.32fr) repeat(4,minmax(43px,1fr))!important;
+  gap:3px!important;
+  align-items:end;
+}
+.pn-compact-controls label{
+  min-width:0!important;
+  font-size:.52rem!important;
+}
+.pn-compact-controls label>span{
+  padding-left:1px!important;
+  text-align:center;
+}
+.pn-compact-controls input{
+  width:100%;
+  min-width:0;
+  min-height:36px!important;
+  margin-top:3px!important;
+  padding:6px 2px!important;
+  border-radius:8px!important;
+  font-size:.64rem!important;
+  font-variant-numeric:tabular-nums;
+}
+@media(max-width:480px){
+  .pn-compact-controls{
+    grid-template-columns:minmax(64px,1.3fr) repeat(4,minmax(40px,1fr))!important;
+  }
+  .pn-compact-controls label:nth-child(4),
+  .pn-compact-controls label:nth-child(5){
+    grid-column:auto!important;
+  }
+}
+@media(max-width:350px){
+  .pn-compact-controls{
+    grid-template-columns:minmax(58px,1.28fr) repeat(4,minmax(36px,1fr))!important;
+  }
+  .pn-compact-controls label:first-child{
+    grid-column:auto!important;
+  }
+  .pn-compact-controls input{
+    font-size:.58rem!important;
+  }
+}
+
+/* v5.1: mode-specific odds reference table */
+.odds-reference-table{
+  margin-top:15px;
+  padding-top:13px;
+  border-top:1px solid rgba(255,255,255,.08);
+}
+.odds-reference-table h3{margin:0}

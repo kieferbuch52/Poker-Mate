@@ -1,11 +1,22 @@
 'use strict';
 
-const APP_VERSION = '5.0.0';
+const APP_VERSION = '5.1.0';
 const APP_CHANGELOG = [
+  {
+    version:'5.1.0',
+    title:'オッズ早見表とPN入力配置の改善',
+    current:true,
+    changes:[
+      'ベットにコールではベットサイズ別の必要勝率表を表示',
+      'レイズにコールではレイズサイズ別の必要勝率表を表示',
+      '選択中のオッズモードに合わせて表題・列・説明を自動切り替え',
+      'パワーナンバーのStack・SB・BB・Ante・後人数をスマホでも1行表示'
+    ]
+  },
   {
     version:'5.0.0',
     title:'データ信頼性と台帳構造の刷新',
-    current:true,
+    current:false,
     changes:[
       '日付をUTCではなく端末の現地日付で保存するよう修正',
       '店舗チップ残高を購入・換金・セッション台帳から自動計算する方式へ変更',
@@ -14,7 +25,7 @@ const APP_CHANGELOG = [
       '保存前検証、インポート検証、データ整合性診断を追加',
       '端末内自動バックアップと復元を追加',
       'ハンド評価・オッズ・日付・チップ台帳の自動テストを追加',
-      'オッズ入力を1行へ圧縮し、共通のレイズ必要勝率表へ統一'
+      'オッズ入力を1行へ圧縮し、モード別の必要勝率早見表を追加'
     ]
   },
   {
@@ -1481,7 +1492,7 @@ function setOddsMode(mode,save=true){
   document.getElementById('oddsModeBadge').textContent=
     resolved==='bet'?'ベットにコール':'レイズにコール';
   if(save)updateUiState({oddsMode:resolved});
-  renderUnifiedRaiseTable();
+  renderOddsReferenceTable();
 }
 document.querySelectorAll('[data-odds-mode]').forEach(button=>{
   button.addEventListener('click',()=>setOddsMode(button.dataset.oddsMode));
@@ -1501,25 +1512,55 @@ function oddsResultHtml({need,call,finalPot,note=''}) {
     ${note?`<p class="odds-result-note">${note}</p>`:''}`;
 }
 
-function currentRaiseTableInputs(){
-  const mode=uiState.oddsMode||'bet';
-  if(mode==='raise')return {pot:Math.max(0,num(document.getElementById('raisePot').value)),ownBet:Math.max(0,num(document.getElementById('raiseOwnBet').value)),label:'レイズにコールの入力'};
-  return {pot:Math.max(0,num(document.getElementById('oddsPot').value)),ownBet:Math.max(0,num(document.getElementById('oddsBet').value)),label:'ベットにコールの入力'};
+function renderBetSizeReferenceTable(){
+  const pot=Math.max(0,num(document.getElementById('oddsPot').value));
+  const sizes=[
+    {label:'1/3 pot',fraction:1/3},
+    {label:'1/2 pot',fraction:1/2},
+    {label:'2/3 pot',fraction:2/3},
+    {label:'3/4 pot',fraction:3/4},
+    {label:'Pot',fraction:1},
+    {label:'1.5x pot',fraction:1.5},
+    {label:'2x pot',fraction:2}
+  ];
+  document.getElementById('oddsReferenceEyebrow').textContent='BET REFERENCE';
+  document.getElementById('oddsReferenceTitle').textContent='ベットサイズ別 必要勝率表';
+  document.getElementById('oddsReferenceContext').textContent='ポット比';
+  document.getElementById('oddsReferenceHint').textContent=
+    'ベット前のポットに対するベットサイズ別の早見表です。相手のベット額と自分のコール額が同額として計算します。';
+  document.getElementById('oddsReferenceTable').innerHTML=
+    '<div class="odds-table-row header"><span>ベットサイズ</span><span>コール額</span><strong>必要勝率</strong></div>'+
+    sizes.map(({label,fraction})=>{
+      const bet=pot*fraction;
+      const result=PokerCore.calculateBetOdds({pot,bet,call:bet});
+      return `<div class="odds-table-row"><span>${label}</span><span>${stripNumberZeros(bet,2)}</span><strong>${pct(result.need)}</strong></div>`;
+    }).join('');
 }
-function renderUnifiedRaiseTable(){
-  const {pot,ownBet,label}=currentRaiseTableInputs();
-  document.getElementById('raiseTableContext').textContent=label;
+function renderRaiseSizeReferenceTable(){
+  const pot=Math.max(0,num(document.getElementById('raisePot').value));
+  const ownBet=Math.max(0,num(document.getElementById('raiseOwnBet').value));
   const multiples=[2,2.5,3,3.5,4,5];
-  document.getElementById('raiseOddsTable').innerHTML=
-    '<div class="odds-table-row header"><span>Raise to</span><span>追加コール</span><strong>必要勝率</strong></div>'+multiples.map(multiplier=>{
+  document.getElementById('oddsReferenceEyebrow').textContent='RAISE REFERENCE';
+  document.getElementById('oddsReferenceTitle').textContent='レイズサイズ別 必要勝率表';
+  document.getElementById('oddsReferenceContext').textContent='Raise to';
+  document.getElementById('oddsReferenceHint').textContent=
+    '現在のポットと自分のベット額を基準に、Raise toの倍率ごとの追加コール額と必要勝率を表示します。';
+  document.getElementById('oddsReferenceTable').innerHTML=
+    '<div class="odds-table-row header"><span>Raise to</span><span>追加コール</span><strong>必要勝率</strong></div>'+
+    multiples.map(multiplier=>{
       const result=PokerCore.calculateRaiseOdds({pot,ownBet,raiseTo:ownBet*multiplier});
       return `<div class="odds-table-row"><span>${multiplier}x</span><span>${result.call.toLocaleString()}</span><strong>${pct(result.need)}</strong></div>`;
     }).join('');
 }
+function renderOddsReferenceTable(){
+  const mode=uiState.oddsMode||'bet';
+  if(mode==='raise')renderRaiseSizeReferenceTable();
+  else renderBetSizeReferenceTable();
+}
 function renderOdds(){
   const result=PokerCore.calculateBetOdds({pot:num(document.getElementById('oddsPot').value),bet:num(document.getElementById('oddsBet').value),call:num(document.getElementById('oddsCall').value)});
   document.getElementById('oddsResult').innerHTML=oddsResultHtml({need:result.need,call:result.call,finalPot:result.finalPot,note:`相手のブラフ損益分岐点 ${pct(result.bluff)}・MDF ${pct(result.mdf)}`});
-  renderUnifiedRaiseTable();
+  renderOddsReferenceTable();
 }
 ['oddsPot','oddsBet','oddsCall'].forEach(id=>document.getElementById(id).addEventListener('input',renderOdds));
 document.querySelectorAll('[data-pot-fraction]').forEach(button=>button.addEventListener('click',()=>{
@@ -1529,7 +1570,7 @@ document.querySelectorAll('[data-pot-fraction]').forEach(button=>button.addEvent
 function renderRaiseOdds(){
   const result=PokerCore.calculateRaiseOdds({pot:num(document.getElementById('raisePot').value),ownBet:num(document.getElementById('raiseOwnBet').value),raiseTo:num(document.getElementById('raiseTo').value)});
   document.getElementById('raiseResult').innerHTML=result.valid?oddsResultHtml({need:result.need,call:result.call,finalPot:result.finalPot,note:`自分の既投入 ${result.ownBet.toLocaleString()}・相手のレイズ合計 ${result.raiseTo.toLocaleString()}`}):'<span class="negative">Raise toは自分のベット額以上にしてください。</span>';
-  renderUnifiedRaiseTable();
+  renderOddsReferenceTable();
 }
 ['raisePot','raiseOwnBet','raiseTo'].forEach(id=>document.getElementById(id).addEventListener('input',renderRaiseOdds));
 document.querySelectorAll('[data-raise-multiple]').forEach(button=>button.addEventListener('click',()=>{
