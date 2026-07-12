@@ -11,7 +11,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./styles.css?v=5.2.0">
+  <link rel="stylesheet" href="./styles.css?v=5.2.1">
 </head>
 <body>
   <header class="topbar">
@@ -21,7 +21,7 @@
     </div>
     <div class="top-actions">
       <button id="globalQuickButton" class="top-quick-button" type="button" aria-haspopup="dialog" aria-controls="quickActionSheet" aria-label="クイック操作を開く">＋</button>
-      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v5.2.0</button>
+      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v5.2.1</button>
       <button id="installBtn" class="ghost hidden">ホーム画面に追加</button>
     </div>
   </header>
@@ -495,7 +495,7 @@
         </div>
 
         <article class="equity-player-card">
-          <div class="equity-player-label">Player 1・自分</div>
+          <div class="equity-player-label hero-player-label">Player 1・自分</div>
           <div class="equity-player-content">
             <div class="visual-card-row hole-card-slots">
               <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="hero" data-card-index="0" aria-label="自分の1枚目">?</button>
@@ -580,30 +580,36 @@
           </label>
         </div>
 
-        <div class="draw-preset-grid" aria-label="ドローを複数選択">
-          <button type="button" class="draw-preset-chip" data-draw-preset="flush" data-outs="9" aria-pressed="false" title="フラッシュドロー：9アウツ">
-            <span>FD</span><small>+9</small>
+        <div class="draw-preset-grid draw-single-choice" role="radiogroup" aria-label="代表的なドローを1つ選択">
+          <button type="button" class="draw-preset-chip" data-draw-preset="combo-15" data-outs="15" role="radio" aria-checked="false" title="オープンエンドストレートドロー＋フラッシュドロー：15アウツ">
+            <span>OESD+FD</span><small>15</small>
           </button>
-          <button type="button" class="draw-preset-chip" data-draw-preset="oesd" data-outs="8" aria-pressed="false" title="オープンエンドストレートドロー：8アウツ">
-            <span>OESD</span><small>+8</small>
+          <button type="button" class="draw-preset-chip" data-draw-preset="combo-12" data-outs="12" role="radio" aria-checked="false" title="ガットショットストレートドロー＋フラッシュドロー：12アウツ">
+            <span>Gut+FD</span><small>12</small>
           </button>
-          <button type="button" class="draw-preset-chip" data-draw-preset="gutshot" data-outs="4" aria-pressed="false" title="ガットショットストレートドロー：4アウツ">
-            <span>Gut</span><small>+4</small>
+          <button type="button" class="draw-preset-chip" data-draw-preset="flush" data-outs="9" role="radio" aria-checked="false" title="フラッシュドロー：9アウツ">
+            <span>FD</span><small>9</small>
           </button>
-          <button type="button" class="draw-preset-chip" data-draw-preset="pair" data-outs="6" aria-pressed="false" title="ペアなしからペア：6アウツ">
-            <span>→Pair</span><small>+6</small>
+          <button type="button" class="draw-preset-chip" data-draw-preset="oesd" data-outs="8" role="radio" aria-checked="false" title="オープンエンドストレートドロー：8アウツ">
+            <span>OESD</span><small>8</small>
           </button>
-          <button type="button" class="draw-preset-chip" data-draw-preset="trips" data-outs="2" aria-pressed="false" title="ペアからトリップス：2アウツ">
-            <span>→Trips</span><small>+2</small>
+          <button type="button" class="draw-preset-chip" data-draw-preset="gutshot" data-outs="4" role="radio" aria-checked="false" title="ガットショットストレートドロー：4アウツ">
+            <span>Gut</span><small>4</small>
           </button>
-          <button type="button" class="draw-preset-chip" data-draw-preset="quads" data-outs="1" aria-pressed="false" title="セットまたはトリップスからクワッズ：1アウツ">
-            <span>→Quads</span><small>+1</small>
+          <button type="button" class="draw-preset-chip" data-draw-preset="pair" data-outs="3" role="radio" aria-checked="false" title="ペアなしの状態からペア：3アウツ">
+            <span>→Pair</span><small>3</small>
+          </button>
+          <button type="button" class="draw-preset-chip" data-draw-preset="trips" data-outs="2" role="radio" aria-checked="false" title="ペアからトリップス：2アウツ">
+            <span>→Trips</span><small>2</small>
+          </button>
+          <button type="button" class="draw-preset-chip" data-draw-preset="quads" data-outs="1" role="radio" aria-checked="false" title="セットまたはトリップスからクワッズ：1アウツ">
+            <span>→Quads</span><small>1</small>
           </button>
         </div>
 
         <div class="draw-selection-row">
-          <span id="drawSelectionText">複数選択できます</span>
-          <button id="clearDrawPresetsBtn" class="ghost compact-button" type="button">クリア</button>
+          <span id="drawSelectionText">代表例を1つ選択できます</span>
+          <button id="clearDrawPresetsBtn" class="ghost compact-button" type="button">解除</button>
         </div>
 
         <div id="drawResult" class="tool-result"></div>
@@ -614,7 +620,7 @@
           <div><span>12アウツ</span><strong>約45% / 26%</strong></div>
           <div><span>15アウツ</span><strong>約54% / 33%</strong></div>
         </div>
-        <p class="hint draw-hint">選択したアウツは合算されます。重複するカードは「最終アウツ」を直接修正してください。「ペアなし→トリップス」は1枚のアウツでは表せないため、「ペア→トリップス（2）」として実装しています。</p>
+        <p class="hint draw-hint">画像の代表例をもとにした単一選択です。実際のアウツは相手のハンド、ボード、重複やダーティーアウツを考慮して「最終アウツ」で調整してください。</p>
       </section>
 
       <section id="powerTool" class="panel hidden">
@@ -859,7 +865,7 @@
         <button id="saveSettingsBtn" class="secondary" type="button">基本設定を保存</button>
         <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">
           <span>アプリバージョン</span>
-          <strong id="settingsVersion">v5.2.0 <span aria-hidden="true">›</span></strong>
+          <strong id="settingsVersion">v5.2.1 <span aria-hidden="true">›</span></strong>
         </button>
       </section>
 
@@ -926,7 +932,7 @@
     <div class="current-version-card">
       <div>
         <span class="current-version-label">現在のバージョン</span>
-        <strong id="currentVersionInModal">v5.2.0</strong>
+        <strong id="currentVersionInModal">v5.2.1</strong>
       </div>
       <span class="up-to-date-badge">最新版</span>
     </div>
@@ -1003,7 +1009,7 @@
   </nav>
 
   <div id="toast" class="toast" role="status"></div>
-  <script src="./core-utils.js?v=5.2.0"></script>
-  <script src="./app.js?v=5.2.0"></script>
+  <script src="./core-utils.js?v=5.2.1"></script>
+  <script src="./app.js?v=5.2.1"></script>
 </body>
 </html>

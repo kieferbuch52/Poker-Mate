@@ -1561,3 +1561,42 @@ main{width:min(860px,100%);padding:14px 14px 20px}
   .draw-preset-chip{min-height:42px}
   .draw-preset-chip span{font-size:.56rem}
 }
+
+
+/* v5.2.1: image-based single draw choice */
+.draw-preset-grid.draw-single-choice{
+  grid-template-columns:repeat(4,minmax(0,1fr));
+}
+.draw-single-choice .draw-preset-chip{
+  min-height:46px;
+}
+.draw-single-choice .draw-preset-chip span{
+  font-size:.57rem;
+}
+.draw-single-choice .draw-preset-chip small{
+  font-size:.64rem;
+  font-weight:950;
+}
+.draw-single-choice .draw-preset-chip.selected{
+  outline:2px solid var(--accent);
+  outline-offset:1px;
+}
+
+/* v5.2.1: align Player 1 label to the left */
+.equity-player-label.hero-player-label{
+  text-align:left;
+}
+
+@media(max-width:420px){
+  .draw-preset-grid.draw-single-choice{
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:4px;
+  }
+  .draw-single-choice .draw-preset-chip{
+    min-height:43px;
+    padding:4px 1px;
+  }
+  .draw-single-choice .draw-preset-chip span{
+    font-size:.52rem;
+  }
+}

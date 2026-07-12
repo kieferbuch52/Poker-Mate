@@ -40,12 +40,9 @@
       miss:100-byRiver
     };
   }
-  function sumDrawPresetOuts(values=[]){
-    return values.reduce((sum,value)=>sum+Math.max(0,Math.floor(number(value))),0);
-  }
   function calculateVenueBalance({openingBalance,transactions=[],sessions=[]}){
     return number(openingBalance)+transactions.reduce((sum,item)=>sum+number(item.amount),0)+sessions.reduce((sum,item)=>sum+number(item.chipDelta),0);
   }
   function deriveOpeningBalance(currentBalance,transactionTotal,sessionTotal){return number(currentBalance)-number(transactionTotal)-number(sessionTotal);}
-  return {number,localDateString,isValidIsoDate,calculateBetOdds,calculateRaiseOdds,calculateDrawOdds,sumDrawPresetOuts,calculateVenueBalance,deriveOpeningBalance};
+  return {number,localDateString,isValidIsoDate,calculateBetOdds,calculateRaiseOdds,calculateDrawOdds,calculateVenueBalance,deriveOpeningBalance};
 });

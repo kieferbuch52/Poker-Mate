@@ -1,11 +1,22 @@
 'use strict';
 
-const APP_VERSION = '5.2.0';
+const APP_VERSION = '5.2.1';
 const APP_CHANGELOG = [
+  {
+    version:'5.2.1',
+    title:'アウツ代表例と勝率ラベル配置の修正',
+    current:true,
+    changes:[
+      'アウツ候補を画像の代表例8種類へ変更',
+      'ドロー候補を複数選択から単一選択へ変更',
+      '15・12・9・8・4・3・2・1アウツをワンタップで反映',
+      'Player 1・自分のラベルを左揃えへ変更'
+    ]
+  },
   {
     version:'5.2.0',
     title:'アウツ選択とカード配置の改善',
-    current:true,
+    current:false,
     changes:[
       'アウツ計算のStreetと最終アウツを1行のコンパクト入力へ変更',
       'FD・OESD・Gut・Pair・Trips・Quadsを複数選択しアウツへ自動反映',
@@ -1871,6 +1882,8 @@ function resetEquityStats(){
 }
 
 const DRAW_PRESET_LABELS={
+  'combo-15':'OESD+FD',
+  'combo-12':'Gut+FD',
   flush:'FD',
   oesd:'OESD',
   gutshot:'Gut',
@@ -1878,31 +1891,27 @@ const DRAW_PRESET_LABELS={
   trips:'→Trips',
   quads:'→Quads'
 };
-let selectedDrawPresets=new Set();
+let selectedDrawPreset=null;
 
-function selectedDrawPresetOuts(){
-  return [...selectedDrawPresets].map(key=>{
-    const button=document.querySelector(`[data-draw-preset="${key}"]`);
-    return num(button?.dataset.outs);
-  });
-}
 function renderDrawPresetUi(){
   document.querySelectorAll('[data-draw-preset]').forEach(button=>{
-    const selected=selectedDrawPresets.has(button.dataset.drawPreset);
+    const selected=selectedDrawPreset===button.dataset.drawPreset;
     button.classList.toggle('selected',selected);
-    button.setAttribute('aria-pressed',String(selected));
+    button.setAttribute('aria-checked',String(selected));
   });
-  const presetTotal=PokerCore.sumDrawPresetOuts(selectedDrawPresetOuts());
-  const finalOuts=Math.max(0,Math.floor(num(document.getElementById('drawOuts').value)));
-  const labels=[...selectedDrawPresets].map(key=>DRAW_PRESET_LABELS[key]).filter(Boolean);
-  document.getElementById('drawSelectionText').textContent=labels.length
-    ?`${labels.join(' + ')}＝${presetTotal}${presetTotal!==finalOuts?`（調整後 ${finalOuts}）`:''}`
-    :'複数選択できます';
+  if(!selectedDrawPreset){
+    document.getElementById('drawSelectionText').textContent='代表例を1つ選択できます';
+    return;
+  }
+  const button=document.querySelector(`[data-draw-preset="${selectedDrawPreset}"]`);
+  const label=DRAW_PRESET_LABELS[selectedDrawPreset]||selectedDrawPreset;
+  document.getElementById('drawSelectionText').textContent=
+    `${label}：${Math.max(0,Math.floor(num(button?.dataset.outs)))}アウツ`;
 }
-function applyDrawPresetTotal(){
-  const total=PokerCore.sumDrawPresetOuts(selectedDrawPresetOuts());
-  document.getElementById('drawOuts').value=total;
-  renderDrawPresetUi();
+function applyDrawPreset(preset){
+  selectedDrawPreset=preset;
+  const button=document.querySelector(`[data-draw-preset="${preset}"]`);
+  document.getElementById('drawOuts').value=Math.max(0,Math.floor(num(button?.dataset.outs)));
   renderDraw();
 }
 function renderDraw(){
@@ -1922,12 +1931,16 @@ document.getElementById('drawStreet').addEventListener('input',renderDraw);
 document.getElementById('drawOuts').addEventListener('input',renderDraw);
 document.querySelectorAll('[data-draw-preset]').forEach(button=>button.addEventListener('click',()=>{
   const key=button.dataset.drawPreset;
-  if(selectedDrawPresets.has(key))selectedDrawPresets.delete(key);
-  else selectedDrawPresets.add(key);
-  applyDrawPresetTotal();
+  if(selectedDrawPreset===key){
+    selectedDrawPreset=null;
+    document.getElementById('drawOuts').value=0;
+    renderDraw();
+    return;
+  }
+  applyDrawPreset(key);
 }));
 document.getElementById('clearDrawPresetsBtn').addEventListener('click',()=>{
-  selectedDrawPresets.clear();
+  selectedDrawPreset=null;
   document.getElementById('drawOuts').value=0;
   renderDraw();
 });
