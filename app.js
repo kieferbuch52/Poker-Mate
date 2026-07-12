@@ -1,11 +1,24 @@
 'use strict';
 
-const APP_VERSION = '5.1.0';
+const APP_VERSION = '5.2.0';
 const APP_CHANGELOG = [
+  {
+    version:'5.2.0',
+    title:'アウツ選択とカード配置の改善',
+    current:true,
+    changes:[
+      'アウツ計算のStreetと最終アウツを1行のコンパクト入力へ変更',
+      'FD・OESD・Gut・Pair・Trips・Quadsを複数選択しアウツへ自動反映',
+      '重複アウツを最終アウツ欄で手動補正できる構成を追加',
+      'ベットにコールのプリセットへ2x potを追加',
+      '勝率計算で自分と相手のハンドをボードより上へ移動',
+      'パワーナンバーの初期ハンドを未選択へ変更'
+    ]
+  },
   {
     version:'5.1.0',
     title:'オッズ早見表とPN入力配置の改善',
-    current:true,
+    current:false,
     changes:[
       'ベットにコールではベットサイズ別の必要勝率表を表示',
       'レイズにコールではレイズサイズ別の必要勝率表を表示',
@@ -463,8 +476,8 @@ let currentRangePosition = ['UTG','HJ','CO','BTN','SB'].includes(uiState.rangePo
 let currentRangeMode = ['rfi','bb'].includes(uiState.rangeMode)
   ?uiState.rangeMode
   :'rfi';
-let selectedPnHand = 'ATo';
-let pnCards = ['As','Th'];
+let selectedPnHand = null;
+let pnCards = [null,null];
 let equityCards = {hero:[null,null],villain:[null,null],board:[null,null,null,null,null]};
 let equityWorker = null;
 let activeCardTarget = null;
@@ -1857,28 +1870,67 @@ function resetEquityStats(){
   document.getElementById('equityMethod').textContent='乱数は使わず全組み合わせを完全列挙します。プリフロップでは相手の2枚を指定してください。相手ランダムはフロップ以降に利用できます。';
 }
 
-function renderDraw(){
-  const street=document.getElementById('drawStreet').value;
-  const maxOuts=street==='flop'?47:46;
-  const outs=Math.max(0,Math.min(maxOuts,Math.floor(num(document.getElementById('drawOuts').value))));
-  const nextCards=street==='flop'?47:46;
-  const next=nextCards?outs/nextCards*100:0;
-  const byRiver=street==='flop'
-    ?(1-((47-outs)/47)*((46-outs)/46))*100
-    :next;
-  const ruleApprox=Math.min(100,outs*(street==='flop'?4:2));
-  const miss=100-byRiver;
-  const label=street==='flop'?'リバーまで':'リバー';
-  document.getElementById('drawResult').innerHTML=
-    `次の1枚でヒット <strong>${pct(next)}</strong><br>`+
-    `${label}までに1回以上ヒット <strong>${pct(byRiver)}</strong><br>`+
-    `<span class="muted">2・4の法則では約 ${pct(ruleApprox)}。外れる確率は ${pct(miss)}。</span>`;
+const DRAW_PRESET_LABELS={
+  flush:'FD',
+  oesd:'OESD',
+  gutshot:'Gut',
+  pair:'→Pair',
+  trips:'→Trips',
+  quads:'→Quads'
+};
+let selectedDrawPresets=new Set();
+
+function selectedDrawPresetOuts(){
+  return [...selectedDrawPresets].map(key=>{
+    const button=document.querySelector(`[data-draw-preset="${key}"]`);
+    return num(button?.dataset.outs);
+  });
 }
-['drawStreet','drawOuts'].forEach(id=>document.getElementById(id).addEventListener('input',renderDraw));
-document.querySelectorAll('[data-draw-outs]').forEach(b=>b.addEventListener('click',()=>{
-  document.getElementById('drawOuts').value=b.dataset.drawOuts;
+function renderDrawPresetUi(){
+  document.querySelectorAll('[data-draw-preset]').forEach(button=>{
+    const selected=selectedDrawPresets.has(button.dataset.drawPreset);
+    button.classList.toggle('selected',selected);
+    button.setAttribute('aria-pressed',String(selected));
+  });
+  const presetTotal=PokerCore.sumDrawPresetOuts(selectedDrawPresetOuts());
+  const finalOuts=Math.max(0,Math.floor(num(document.getElementById('drawOuts').value)));
+  const labels=[...selectedDrawPresets].map(key=>DRAW_PRESET_LABELS[key]).filter(Boolean);
+  document.getElementById('drawSelectionText').textContent=labels.length
+    ?`${labels.join(' + ')}＝${presetTotal}${presetTotal!==finalOuts?`（調整後 ${finalOuts}）`:''}`
+    :'複数選択できます';
+}
+function applyDrawPresetTotal(){
+  const total=PokerCore.sumDrawPresetOuts(selectedDrawPresetOuts());
+  document.getElementById('drawOuts').value=total;
+  renderDrawPresetUi();
   renderDraw();
+}
+function renderDraw(){
+  const result=PokerCore.calculateDrawOdds({
+    street:document.getElementById('drawStreet').value,
+    outs:document.getElementById('drawOuts').value
+  });
+  const label=result.street==='flop'?'リバーまで':'リバー';
+  document.getElementById('drawTotalBadge').textContent=`${result.outs}アウツ`;
+  document.getElementById('drawResult').innerHTML=
+    `次の1枚でヒット <strong>${pct(result.next)}</strong><br>`+
+    `${label}までに1回以上ヒット <strong>${pct(result.byRiver)}</strong><br>`+
+    `<span class="muted">2・4の法則では約 ${pct(result.ruleApprox)}。外れる確率は ${pct(result.miss)}。</span>`;
+  renderDrawPresetUi();
+}
+document.getElementById('drawStreet').addEventListener('input',renderDraw);
+document.getElementById('drawOuts').addEventListener('input',renderDraw);
+document.querySelectorAll('[data-draw-preset]').forEach(button=>button.addEventListener('click',()=>{
+  const key=button.dataset.drawPreset;
+  if(selectedDrawPresets.has(key))selectedDrawPresets.delete(key);
+  else selectedDrawPresets.add(key);
+  applyDrawPresetTotal();
 }));
+document.getElementById('clearDrawPresetsBtn').addEventListener('click',()=>{
+  selectedDrawPresets.clear();
+  document.getElementById('drawOuts').value=0;
+  renderDraw();
+});
 
 function canonicalHandFromCards(cards){
   if(!cards[0]||!cards[1])return null;
@@ -1893,13 +1945,13 @@ function representativeCardsForHand(hand){
   return hand.endsWith('s')?[`${first}s`,`${second}s`]:[`${first}s`,`${second}h`];
 }
 function buildPnHandPicker(){
-  pnCards=representativeCardsForHand(selectedPnHand);
+  pnCards=selectedPnHand?representativeCardsForHand(selectedPnHand):[null,null];
   renderVisualCards();
 }
 function updatePnHandFromCards(){
   const hand=canonicalHandFromCards(pnCards);
-  if(hand)selectedPnHand=hand;
-  document.getElementById('pnSelectedLabel').textContent=hand||'2枚選択';
+  selectedPnHand=hand||null;
+  document.getElementById('pnSelectedLabel').textContent=hand||'未選択';
   if(document.getElementById('pnResult'))renderPower();
 }
 function pnForHand(hand){
@@ -1907,7 +1959,7 @@ function pnForHand(hand){
   for(let r=0;r<13;r++)for(let c=0;c<13;c++)if(handLabel(r,c)===hand)return powerMatrix[r][c];
   return 1;
 }
-document.getElementById('clearPnCardsBtn').addEventListener('click',()=>{pnCards=[null,null];renderVisualCards();});
+document.getElementById('clearPnCardsBtn').addEventListener('click',()=>{selectedPnHand=null;pnCards=[null,null];renderVisualCards();});
 
 function pnDisplayValue(value){
   return value>=80?'all':value<2?'—':String(value);

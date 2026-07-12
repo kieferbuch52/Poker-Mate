@@ -11,7 +11,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./styles.css?v=5.1.0">
+  <link rel="stylesheet" href="./styles.css?v=5.2.0">
 </head>
 <body>
   <header class="topbar">
@@ -21,7 +21,7 @@
     </div>
     <div class="top-actions">
       <button id="globalQuickButton" class="top-quick-button" type="button" aria-haspopup="dialog" aria-controls="quickActionSheet" aria-label="クイック操作を開く">＋</button>
-      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v5.1.0</button>
+      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v5.2.0</button>
       <button id="installBtn" class="ghost hidden">ホーム画面に追加</button>
     </div>
   </header>
@@ -448,6 +448,7 @@
             <button type="button" data-pot-fraction="0.75">3/4 pot</button>
             <button type="button" data-pot-fraction="1">Pot</button>
             <button type="button" data-pot-fraction="1.5">1.5x</button>
+            <button type="button" data-pot-fraction="2">2x</button>
           </div>
           <div id="oddsResult" class="tool-result"></div>
         </div>
@@ -493,19 +494,6 @@
           <button id="resetEquityBtn" class="ghost compact-button" type="button">クリア</button>
         </div>
 
-        <div class="equity-board-block">
-          <div class="street-label-row">
-            <span>Flop</span><span>Turn</span><span>River</span>
-          </div>
-          <div class="visual-card-row board-slots" id="equityBoardSlots">
-            <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="board" data-card-index="0" aria-label="フロップ1枚目">?</button>
-            <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="board" data-card-index="1" aria-label="フロップ2枚目">?</button>
-            <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="board" data-card-index="2" aria-label="フロップ3枚目">?</button>
-            <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="board" data-card-index="3" aria-label="ターン">?</button>
-            <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="board" data-card-index="4" aria-label="リバー">?</button>
-          </div>
-        </div>
-
         <article class="equity-player-card">
           <div class="equity-player-label">Player 1・自分</div>
           <div class="equity-player-content">
@@ -536,6 +524,19 @@
           </div>
         </article>
 
+        <div class="equity-board-block">
+          <div class="street-label-row">
+            <span>Flop</span><span>Turn</span><span>River</span>
+          </div>
+          <div class="visual-card-row board-slots" id="equityBoardSlots">
+            <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="board" data-card-index="0" aria-label="フロップ1枚目">?</button>
+            <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="board" data-card-index="1" aria-label="フロップ2枚目">?</button>
+            <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="board" data-card-index="2" aria-label="フロップ3枚目">?</button>
+            <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="board" data-card-index="3" aria-label="ターン">?</button>
+            <button type="button" class="playing-card empty" data-card-picker="equity" data-card-zone="board" data-card-index="4" aria-label="リバー">?</button>
+          </div>
+        </div>
+
         <div class="equity-actions">
           <button id="calculateEquityBtn" class="primary" type="button">完全計算する</button>
           <button id="randomVillainBtn" class="secondary" type="button">相手をランダムに戻す</button>
@@ -557,34 +558,63 @@
       </section>
 
       <section id="drawTool" class="panel hidden">
-        <h3>アウツ数・ドロー勝率</h3>
-        <div class="grid two">
-          <label>現在のストリート
+        <div class="section-head draw-tool-heading">
+          <div>
+            <p class="eyebrow">DRAW ODDS</p>
+            <h3>アウツ・ドロー勝率</h3>
+          </div>
+          <span id="drawTotalBadge" class="summary-badge">0アウツ</span>
+        </div>
+
+        <div class="draw-compact-inputs">
+          <label>
+            <span>Street</span>
             <select id="drawStreet">
-              <option value="flop">フロップ（残り2枚）</option>
-              <option value="turn">ターン（残り1枚）</option>
+              <option value="flop">Flop（2枚）</option>
+              <option value="turn">Turn（1枚）</option>
             </select>
           </label>
-          <label>クリーンなアウツ数
-            <input id="drawOuts" type="number" inputmode="numeric" min="0" max="47" step="1" value="9">
+          <label>
+            <span>最終アウツ</span>
+            <input id="drawOuts" type="number" inputmode="numeric" min="0" max="47" step="1" value="0">
           </label>
         </div>
-        <div class="preset-row">
-          <button type="button" data-draw-outs="9">フラッシュ 9</button>
-          <button type="button" data-draw-outs="8">OESD 8</button>
-          <button type="button" data-draw-outs="4">ガット 4</button>
-          <button type="button" data-draw-outs="6">オーバーカード 6</button>
-          <button type="button" data-draw-outs="15">コンボ 15</button>
+
+        <div class="draw-preset-grid" aria-label="ドローを複数選択">
+          <button type="button" class="draw-preset-chip" data-draw-preset="flush" data-outs="9" aria-pressed="false" title="フラッシュドロー：9アウツ">
+            <span>FD</span><small>+9</small>
+          </button>
+          <button type="button" class="draw-preset-chip" data-draw-preset="oesd" data-outs="8" aria-pressed="false" title="オープンエンドストレートドロー：8アウツ">
+            <span>OESD</span><small>+8</small>
+          </button>
+          <button type="button" class="draw-preset-chip" data-draw-preset="gutshot" data-outs="4" aria-pressed="false" title="ガットショットストレートドロー：4アウツ">
+            <span>Gut</span><small>+4</small>
+          </button>
+          <button type="button" class="draw-preset-chip" data-draw-preset="pair" data-outs="6" aria-pressed="false" title="ペアなしからペア：6アウツ">
+            <span>→Pair</span><small>+6</small>
+          </button>
+          <button type="button" class="draw-preset-chip" data-draw-preset="trips" data-outs="2" aria-pressed="false" title="ペアからトリップス：2アウツ">
+            <span>→Trips</span><small>+2</small>
+          </button>
+          <button type="button" class="draw-preset-chip" data-draw-preset="quads" data-outs="1" aria-pressed="false" title="セットまたはトリップスからクワッズ：1アウツ">
+            <span>→Quads</span><small>+1</small>
+          </button>
         </div>
+
+        <div class="draw-selection-row">
+          <span id="drawSelectionText">複数選択できます</span>
+          <button id="clearDrawPresetsBtn" class="ghost compact-button" type="button">クリア</button>
+        </div>
+
         <div id="drawResult" class="tool-result"></div>
         <div class="quick-table draw-reference">
-          <div><span>4アウト</span><strong>約17% / 9%</strong></div>
-          <div><span>8アウト</span><strong>約32% / 17%</strong></div>
-          <div><span>9アウト</span><strong>約35% / 20%</strong></div>
-          <div><span>12アウト</span><strong>約45% / 26%</strong></div>
-          <div><span>15アウト</span><strong>約54% / 33%</strong></div>
+          <div><span>4アウツ</span><strong>約17% / 9%</strong></div>
+          <div><span>8アウツ</span><strong>約32% / 17%</strong></div>
+          <div><span>9アウツ</span><strong>約35% / 20%</strong></div>
+          <div><span>12アウツ</span><strong>約45% / 26%</strong></div>
+          <div><span>15アウツ</span><strong>約54% / 33%</strong></div>
         </div>
-        <p class="hint">表の右側は「フロップからリバーまで / ターンからリバー」の概算です。相手の上位ドロー、ボードペア、重複アウトなどで逆転されるカードはアウツから差し引いてください。</p>
+        <p class="hint draw-hint">選択したアウツは合算されます。重複するカードは「最終アウツ」を直接修正してください。「ペアなし→トリップス」は1枚のアウツでは表せないため、「ペア→トリップス（2）」として実装しています。</p>
       </section>
 
       <section id="powerTool" class="panel hidden">
@@ -829,7 +859,7 @@
         <button id="saveSettingsBtn" class="secondary" type="button">基本設定を保存</button>
         <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">
           <span>アプリバージョン</span>
-          <strong id="settingsVersion">v5.1.0 <span aria-hidden="true">›</span></strong>
+          <strong id="settingsVersion">v5.2.0 <span aria-hidden="true">›</span></strong>
         </button>
       </section>
 
@@ -896,7 +926,7 @@
     <div class="current-version-card">
       <div>
         <span class="current-version-label">現在のバージョン</span>
-        <strong id="currentVersionInModal">v5.1.0</strong>
+        <strong id="currentVersionInModal">v5.2.0</strong>
       </div>
       <span class="up-to-date-badge">最新版</span>
     </div>
@@ -973,7 +1003,7 @@
   </nav>
 
   <div id="toast" class="toast" role="status"></div>
-  <script src="./core-utils.js?v=5.1.0"></script>
-  <script src="./app.js?v=5.1.0"></script>
+  <script src="./core-utils.js?v=5.2.0"></script>
+  <script src="./app.js?v=5.2.0"></script>
 </body>
 </html>

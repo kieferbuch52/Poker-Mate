@@ -22,9 +22,30 @@
     const valid=raiseTo>=ownBet,call=Math.max(0,raiseTo-ownBet),finalPot=pot+ownBet+raiseTo+call;
     return {pot,ownBet,raiseTo,valid,call,finalPot,need:valid&&finalPot?call/finalPot*100:0};
   }
+  function calculateDrawOdds({street='flop',outs=0}){
+    const normalizedStreet=street==='turn'?'turn':'flop';
+    const maxOuts=normalizedStreet==='flop'?47:46;
+    const cleanOuts=Math.max(0,Math.min(maxOuts,Math.floor(number(outs))));
+    const nextCards=normalizedStreet==='flop'?47:46;
+    const next=nextCards?cleanOuts/nextCards*100:0;
+    const byRiver=normalizedStreet==='flop'
+      ?(1-((47-cleanOuts)/47)*((46-cleanOuts)/46))*100
+      :next;
+    return {
+      street:normalizedStreet,
+      outs:cleanOuts,
+      next,
+      byRiver,
+      ruleApprox:Math.min(100,cleanOuts*(normalizedStreet==='flop'?4:2)),
+      miss:100-byRiver
+    };
+  }
+  function sumDrawPresetOuts(values=[]){
+    return values.reduce((sum,value)=>sum+Math.max(0,Math.floor(number(value))),0);
+  }
   function calculateVenueBalance({openingBalance,transactions=[],sessions=[]}){
     return number(openingBalance)+transactions.reduce((sum,item)=>sum+number(item.amount),0)+sessions.reduce((sum,item)=>sum+number(item.chipDelta),0);
   }
   function deriveOpeningBalance(currentBalance,transactionTotal,sessionTotal){return number(currentBalance)-number(transactionTotal)-number(sessionTotal);}
-  return {number,localDateString,isValidIsoDate,calculateBetOdds,calculateRaiseOdds,calculateVenueBalance,deriveOpeningBalance};
+  return {number,localDateString,isValidIsoDate,calculateBetOdds,calculateRaiseOdds,calculateDrawOdds,sumDrawPresetOuts,calculateVenueBalance,deriveOpeningBalance};
 });
