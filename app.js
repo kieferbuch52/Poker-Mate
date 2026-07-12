@@ -1,11 +1,24 @@
 'use strict';
 
-const APP_VERSION = '6.0.0';
+const APP_VERSION = '6.1.0';
 const APP_CHANGELOG = [
+  {
+    version:'6.1.0',
+    title:'ヘッズアップとスタック別レンジの拡張',
+    current:true,
+    changes:[
+      'レンジのゲーム形式へヘッズアップを追加',
+      'ヘッズアップ100BBのBTN/SBオープンレンジを追加',
+      'ヘッズアップ100BBのBBディフェンスレンジを追加',
+      'トーナメント有効スタックへ100BB・80BB・60BB・10BBを追加',
+      'トーナメントを100・80・60・40・25・15・10BBの7段階へ拡張',
+      'ヘッズアップ時はポジション表示をBTN/SBへ自動切り替え'
+    ]
+  },
   {
     version:'6.0.0',
     title:'収支分析とセッション計測の拡張',
-    current:true,
+    current:false,
     changes:[
       '開始・一時停止・再開・終了に対応したセッションタイマーを追加',
       '開始時刻・終了時刻と日またぎのプレー時間計算を追加',
@@ -459,6 +472,113 @@ const tournamentBbDefenseRanges = {
 
 
 
+function cloneRangeSet(value){
+  return new Set(value||[]);
+}
+function rangeWithout(base,remove=[]){
+  return adjustedRange(base,[],remove);
+}
+function cloneDefenseRange(base,{addThreebet=[],removeThreebet=[],addCall=[],removeCall=[]}={}){
+  const threebet=adjustedRange(base?.threebet,addThreebet,removeThreebet);
+  const call=adjustedRange(base?.call,addCall,[...removeCall,...threebet]);
+  return {threebet,call};
+}
+
+/*
+ * Deep-stack tournament ranges are intentionally interpolated around the
+ * existing 40BB model. They are learning references rather than solver output.
+ */
+tournamentRfiRanges['100']={
+  UTG:adjustedRange(ranges.UTG,['44','A5s','K9s','Q9s','J9s','T8s','87s']),
+  HJ:adjustedRange(ranges.HJ,['33','A2s','A3s','A4s','K8s','Q8s','J8s','97s','76s']),
+  CO:adjustedRange(ranges.CO,['A2o','A3o','A4o','A5o','A6o','A7o','K6s','Q7s','J7s','T7s','96s','86s','75s','64s']),
+  BTN:adjustedRange(ranges.BTN,['K2o','K3o','K4o','K5o','Q7o','Q8o','J8o','T8o','95s','85s','74s','64s','53s','43s']),
+  SB:adjustedRange(ranges.SB,['K2o','K3o','K4o','K5o','K6o','Q7o','Q8o','J8o','T8o','98o','87o','76o','65o'])
+};
+tournamentRfiRanges['80']={
+  UTG:adjustedRange(tournamentRfiRanges['100'].UTG,['A4s','76s']),
+  HJ:adjustedRange(tournamentRfiRanges['100'].HJ,['65s']),
+  CO:adjustedRange(tournamentRfiRanges['100'].CO,['K5s','53s']),
+  BTN:adjustedRange(tournamentRfiRanges['100'].BTN,['K6o','84s','32s']),
+  SB:adjustedRange(tournamentRfiRanges['100'].SB,['K7o','43s','32s'])
+};
+tournamentRfiRanges['60']={
+  UTG:adjustedRange(tournamentRfiRanges['80'].UTG,['A3s']),
+  HJ:adjustedRange(tournamentRfiRanges['80'].HJ,['22','A8o']),
+  CO:adjustedRange(tournamentRfiRanges['80'].CO,['K9o','Q9o','J9o','T9o']),
+  BTN:adjustedRange(tournamentRfiRanges['80'].BTN,['Q6o','J7o','T7o','75s']),
+  SB:adjustedRange(tournamentRfiRanges['80'].SB,['Q6o','J7o','T7o','54o'])
+};
+tournamentRfiRanges['10']={
+  UTG:adjustedRange(tournamentRfiRanges['15'].UTG,['A8o','K9s'],['T9s']),
+  HJ:adjustedRange(tournamentRfiRanges['15'].HJ,['A7o','K9o','QJo']),
+  CO:adjustedRange(tournamentRfiRanges['15'].CO,['A2o','A3o','A4o','K5s','K6s','K9o','Q7s','Q9o','J7s','J9o','T7s','T9o','97s','87s','76s']),
+  BTN:adjustedRange(tournamentRfiRanges['15'].BTN,['K2o','K3o','K4o','K5o','K6o','Q7o','Q8o','J8o','T8o','96s','86s','75s','65s']),
+  SB:adjustedRange(tournamentRfiRanges['15'].SB,['K2o','K3o','K4o','Q5o','Q6o','Q7o','J7o','T7o','97o','86s','75s','64s','53s','43s','32s'])
+};
+
+tournamentBbDefenseRanges['100']={
+  UTG:cloneDefenseRange(bbDefenseRanges.UTG,{addThreebet:['JJ','AQs','AQo','A4s'],addCall:['K8s','Q8s','J8s','T8s','97s']}),
+  HJ:cloneDefenseRange(bbDefenseRanges.HJ,{addThreebet:['TT','AQo','A3s'],addCall:['A9o','K7s','Q7s','T7s']}),
+  CO:cloneDefenseRange(bbDefenseRanges.CO,{addThreebet:['99','ATs','AJo','KJs'],addCall:['A7o','K9o','Q9o','J9o','T9o','74s']}),
+  BTN:cloneDefenseRange(bbDefenseRanges.BTN,{addThreebet:['88','A9s','ATo','KTs','QTs'],addCall:['K6o','Q8o','J8o','T8o','76o','65s','54s']}),
+  SB:cloneDefenseRange(bbDefenseRanges.SB,{addThreebet:['77','A8s','A9o','K9s','QTs'],addCall:['K4o','Q7o','J7o','T7o','97o','76o','65o']})
+};
+tournamentBbDefenseRanges['80']={
+  UTG:cloneDefenseRange(tournamentBbDefenseRanges['100'].UTG,{addCall:['96s','86s']}),
+  HJ:cloneDefenseRange(tournamentBbDefenseRanges['100'].HJ,{addThreebet:['99'],addCall:['K8o','97s','87s']}),
+  CO:cloneDefenseRange(tournamentBbDefenseRanges['100'].CO,{addThreebet:['A9s'],addCall:['A6o','K8o','Q8o','J8o']}),
+  BTN:cloneDefenseRange(tournamentBbDefenseRanges['100'].BTN,{addThreebet:['77','A8s'],addCall:['K5o','Q7o','J7o','T7o','65o']}),
+  SB:cloneDefenseRange(tournamentBbDefenseRanges['100'].SB,{addThreebet:['66','A7s'],addCall:['K3o','Q6o','J6o','T6o','86o']})
+};
+tournamentBbDefenseRanges['60']={
+  UTG:cloneDefenseRange(tournamentBbDefenseRanges['80'].UTG,{addThreebet:['TT'],addCall:['A9o','K9o']}),
+  HJ:cloneDefenseRange(tournamentBbDefenseRanges['80'].HJ,{addThreebet:['88','ATs'],addCall:['A8o','K7o','Q8o']}),
+  CO:cloneDefenseRange(tournamentBbDefenseRanges['80'].CO,{addThreebet:['88','ATo'],addCall:['A5o','K7o','Q7o','T8o']}),
+  BTN:cloneDefenseRange(tournamentBbDefenseRanges['80'].BTN,{addThreebet:['66','A7s'],addCall:['K4o','Q6o','J6o','T6o','54o']}),
+  SB:cloneDefenseRange(tournamentBbDefenseRanges['80'].SB,{addThreebet:['55','A6s'],addCall:['K2o','Q5o','J5o','T5o','75o']})
+};
+tournamentBbDefenseRanges['10']={
+  UTG:cloneDefenseRange(tournamentBbDefenseRanges['15'].UTG,{addThreebet:['66','ATs','AJo','KQs'],removeCall:['22','33','T9s']}),
+  HJ:cloneDefenseRange(tournamentBbDefenseRanges['15'].HJ,{addThreebet:['55','A9s','ATo','KJs'],removeCall:['22','98s']}),
+  CO:cloneDefenseRange(tournamentBbDefenseRanges['15'].CO,{addThreebet:['44','A7s','A9o','KTs','QJs'],removeCall:['22','33','87s']}),
+  BTN:cloneDefenseRange(tournamentBbDefenseRanges['15'].BTN,{addThreebet:['22','33','A2s','A3s','A4s','A7o','K8s','QJs'],removeCall:['76s']}),
+  SB:cloneDefenseRange(tournamentBbDefenseRanges['15'].SB,{addThreebet:['K5s','K6s','K7o','Q8s','J9s','T9s'],removeCall:['65s']})
+};
+
+const headsUpRfiRanges={
+  BTN:adjustedRange(ranges.SB,[
+    'K2o','K3o','K4o','K5o','K6o','K7o',
+    'Q2s','Q3s','Q4s','Q5o','Q6o','Q7o','Q8o',
+    'J2s','J3s','J4s','J5s','J6s','J7o','J8o',
+    'T2s','T3s','T4s','T5s','T6s','T7o','T8o',
+    '92s','93s','94s','95s','96s','97o','98o',
+    '82s','83s','84s','85s','86s','87o',
+    '72s','73s','74s','75s','76o',
+    '62s','63s','64s','65s','65o',
+    '52s','53s','54s','54o',
+    '42s','43s','43o','32s'
+  ])
+};
+const headsUpThreebet=new Set([
+  '66','77','88','99','TT','JJ','QQ','KK','AA',
+  'A2s','A3s','A4s','A5s','A8s','A9s','ATs','AJs','AQs','AKs',
+  'ATo','AJo','AQo','AKo',
+  'K5s','K6s','K7s','K8s','KTs','KJs','KQs','KQo',
+  'QTs','QJs','JTs','T9s'
+]);
+const headsUpBbDefenseRanges={
+  BTN:{
+    threebet:headsUpThreebet,
+    call:rangeWithout(headsUpRfiRanges.BTN,[
+      ...headsUpThreebet,
+      '32s','42s','43o','52s','53s','62s','63s','72s','73s',
+      '82s','83s','92s','93s','T2s','J2s','Q2s'
+    ])
+  }
+};
+
+
 function loadUiState(){
   const defaults={
     lastTool:'odds',
@@ -495,8 +615,8 @@ function updateUiState(values){
 let state = loadState();
 let uiState = loadUiState();
 let currentSessionType = 'cash';
-let currentRangeGame = uiState.rangeGame==='tournament'?'tournament':'ring';
-let currentTournamentStack = ['40','25','15'].includes(String(uiState.tournamentStack))
+let currentRangeGame = ['ring','tournament','headsup'].includes(uiState.rangeGame)?uiState.rangeGame:'ring';
+let currentTournamentStack = ['100','80','60','40','25','15','10'].includes(String(uiState.tournamentStack))
   ?String(uiState.tournamentStack)
   :'25';
 let currentRangePosition = ['UTG','HJ','CO','BTN','SB'].includes(uiState.rangePosition)
@@ -1810,8 +1930,19 @@ function rangeScenario(){
       gameLabel:'リング',
       stackLabel:'100BB',
       context:'6-max・100BBの標準的な学習用レンジ',
+      positions:['UTG','HJ','CO','BTN','SB'],
       rfi:ranges,
       defense:bbDefenseRanges
+    };
+  }
+  if(currentRangeGame==='headsup'){
+    return {
+      gameLabel:'ヘッズアップ',
+      stackLabel:'100BB',
+      context:'BTN/SB対BB・100BB・2.5BBオープン想定',
+      positions:['BTN'],
+      rfi:headsUpRfiRanges,
+      defense:headsUpBbDefenseRanges
     };
   }
   const stack=currentTournamentStack;
@@ -1819,12 +1950,19 @@ function rangeScenario(){
     gameLabel:'トーナメント',
     stackLabel:`${stack}BB`,
     context:`アンティあり・6-max・${stack}BBのchipEV学習用レンジ`,
+    positions:['UTG','HJ','CO','BTN','SB'],
     rfi:tournamentRfiRanges[stack],
     defense:tournamentBbDefenseRanges[stack]
   };
 }
 function renderRangeGrid(){
   const scenario=rangeScenario();
+
+  if(!scenario.positions.includes(currentRangePosition)){
+    currentRangePosition=scenario.positions[0];
+    updateUiState({rangePosition:currentRangePosition});
+  }
+
   document.querySelectorAll('[data-range-game]').forEach(button=>{
     button.classList.toggle('active',button.dataset.rangeGame===currentRangeGame);
   });
@@ -1836,9 +1974,17 @@ function renderRangeGrid(){
     button.classList.toggle('active',button.dataset.rangeMode===currentRangeMode);
   });
   document.querySelectorAll('[data-position]').forEach(button=>{
-    button.classList.toggle('active',button.dataset.position===currentRangePosition);
-    button.textContent=currentRangeMode==='bb'?`vs ${button.dataset.position}`:button.dataset.position;
+    const position=button.dataset.position;
+    const visible=scenario.positions.includes(position);
+    button.classList.toggle('hidden',!visible);
+    button.classList.toggle('active',visible&&position===currentRangePosition);
+    if(currentRangeGame==='headsup'&&position==='BTN'){
+      button.textContent=currentRangeMode==='bb'?'vs BTN/SB':'BTN/SB';
+    }else{
+      button.textContent=currentRangeMode==='bb'?`vs ${position}`:position;
+    }
   });
+  document.getElementById('rangePositionTabs').classList.toggle('headsup-position-tabs',currentRangeGame==='headsup');
 
   const title=document.getElementById('rangePageTitle');
   const legend=document.getElementById('rangeLegend');
@@ -1849,38 +1995,52 @@ function renderRangeGrid(){
   contextBadge.textContent=`${scenario.gameLabel}・${scenario.stackLabel}`;
   contextDescription.textContent=scenario.context;
 
+  const shortStack=currentRangeGame==='tournament'&&Number(currentTournamentStack)<=15;
+
   if(currentRangeMode==='rfi'){
-    const shortStack=currentRangeGame==='tournament'&&currentTournamentStack==='15';
-    title.textContent=currentRangeGame==='ring'
-      ?'リング RFIレンジ表'
-      :`トーナメント ${currentTournamentStack}BB RFIレンジ`;
+    if(currentRangeGame==='ring')title.textContent='リング RFIレンジ表';
+    else if(currentRangeGame==='headsup')title.textContent='ヘッズアップ BTN/SBオープン';
+    else title.textContent=`トーナメント ${currentTournamentStack}BB RFIレンジ`;
+
     legend.innerHTML=shortStack
       ?'<span><i class="dot open"></i>参加候補</span><span><i class="dot fold"></i>フォールド</span>'
       :'<span><i class="dot open"></i>オープン</span><span><i class="dot fold"></i>フォールド</span>';
-    hint.textContent=currentRangeGame==='ring'
-      ?'標準的な100BB・6-maxの学習用簡易レンジです。レーキ、相手、オープンサイズに応じて調整してください。'
-      :shortStack
-        ?'15BBではミンレイズとオールインが混在します。表示は参加候補の目安です。バブル・ファイナル・サテライトなどICMが強い局面では必ず調整してください。'
-        :`アンティあり・${currentTournamentStack}BB・6-maxを想定したchipEVの学習用簡易レンジです。バブルや賞金ジャンプがある局面ではICMに応じて調整してください。`;
-    const set=scenario.rfi[currentRangePosition];
+
+    if(currentRangeGame==='ring'){
+      hint.textContent='標準的な100BB・6-maxの学習用簡易レンジです。レーキ、相手、オープンサイズに応じて調整してください。';
+    }else if(currentRangeGame==='headsup'){
+      hint.textContent='100BBのヘッズアップでBTNを兼ねるSBから約2.5BBへオープンする学習用簡易レンジです。リンプを含む混合戦略はオープン候補としてまとめています。';
+    }else if(shortStack){
+      hint.textContent=`${currentTournamentStack}BBではミンレイズとオールインが混在します。表示は参加候補の目安です。バブル・ファイナル・サテライトなどICMが強い局面では必ず調整してください。`;
+    }else{
+      hint.textContent=`アンティあり・${currentTournamentStack}BB・6-maxを想定したchipEVの学習用簡易レンジです。100〜60BBは既存レンジから補間した目安で、バブルや賞金ジャンプではICMに応じて調整してください。`;
+    }
+
+    const set=scenario.rfi[currentRangePosition]||new Set();
     document.getElementById('rangeGrid').innerHTML=ranks.flatMap((_,row)=>ranks.map((__,col)=>{
       const hand=handLabel(row,col);
       return `<button class="hand-cell ${set.has(hand)?'open':''}" title="${hand}">${hand}</button>`;
     })).join('');
   }else{
-    const shortStack=currentRangeGame==='tournament'&&currentTournamentStack==='15';
-    title.textContent=currentRangeGame==='ring'
-      ?'リング BBディフェンス'
-      :`トーナメント ${currentTournamentStack}BB BBディフェンス`;
+    if(currentRangeGame==='ring')title.textContent='リング BBディフェンス';
+    else if(currentRangeGame==='headsup')title.textContent='ヘッズアップ BBディフェンス';
+    else title.textContent=`トーナメント ${currentTournamentStack}BB BBディフェンス`;
+
     legend.innerHTML=shortStack
       ?'<span><i class="dot threebet"></i>オールイン</span><span><i class="dot call"></i>コール</span><span><i class="dot fold"></i>フォールド</span>'
       :'<span><i class="dot threebet"></i>3ベット</span><span><i class="dot call"></i>コール</span><span><i class="dot fold"></i>フォールド</span>';
-    hint.textContent=currentRangeGame==='ring'
-      ?`100BB・6-maxで${currentRangePosition}から約2.5BBオープンを受けた場合の学習用簡易レンジです。レーキが高いライブゲームではコールをやや絞ってください。`
-      :shortStack
-        ?`${currentRangePosition}の約2BBオープンに対する15BBの簡易目安です。青は主にオールイン候補、黄はコール候補です。ICMが強い場面ではオールインを慎重に調整してください。`
-        :`${currentRangePosition}の約2〜2.2BBオープンに対する${currentTournamentStack}BBのchipEV学習用簡易レンジです。アンティ、相手のサイズ、ICMに応じて調整してください。`;
-    const defense=scenario.defense[currentRangePosition];
+
+    if(currentRangeGame==='ring'){
+      hint.textContent=`100BB・6-maxで${currentRangePosition}から約2.5BBオープンを受けた場合の学習用簡易レンジです。レーキが高いライブゲームではコールをやや絞ってください。`;
+    }else if(currentRangeGame==='headsup'){
+      hint.textContent='100BBのヘッズアップでBTN/SBから約2.5BBオープンを受けたBBの学習用簡易レンジです。青は3ベット候補、黄はコール候補です。';
+    }else if(shortStack){
+      hint.textContent=`${currentRangePosition}の約2BBオープンに対する${currentTournamentStack}BBの簡易目安です。青は主にオールイン候補、黄はコール候補です。ICMが強い場面ではオールインを慎重に調整してください。`;
+    }else{
+      hint.textContent=`${currentRangePosition}の約2〜2.2BBオープンに対する${currentTournamentStack}BBのchipEV学習用簡易レンジです。100〜60BBは補間値を含み、アンティ、相手のサイズ、ICMに応じて調整してください。`;
+    }
+
+    const defense=scenario.defense[currentRangePosition]||{threebet:new Set(),call:new Set()};
     document.getElementById('rangeGrid').innerHTML=ranks.flatMap((_,row)=>ranks.map((__,col)=>{
       const hand=handLabel(row,col);
       const action=defense.threebet.has(hand)?'threebet':defense.call.has(hand)?'call':'';
@@ -1890,7 +2050,8 @@ function renderRangeGrid(){
 }
 document.querySelectorAll('[data-range-game]').forEach(button=>button.addEventListener('click',()=>{
   currentRangeGame=button.dataset.rangeGame;
-  updateUiState({rangeGame:currentRangeGame});
+  if(currentRangeGame==='headsup')currentRangePosition='BTN';
+  updateUiState({rangeGame:currentRangeGame,rangePosition:currentRangePosition});
   renderRangeGrid();
 }));
 document.querySelectorAll('[data-tournament-stack]').forEach(button=>button.addEventListener('click',()=>{
@@ -1904,6 +2065,7 @@ document.querySelectorAll('[data-range-mode]').forEach(button=>button.addEventLi
   renderRangeGrid();
 }));
 document.querySelectorAll('[data-position]').forEach(button=>button.addEventListener('click',()=>{
+  if(button.classList.contains('hidden'))return;
   currentRangePosition=button.dataset.position;
   updateUiState({rangePosition:currentRangePosition});
   renderRangeGrid();

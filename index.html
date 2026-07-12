@@ -11,7 +11,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./styles.css?v=6.0.0">
+  <link rel="stylesheet" href="./styles.css?v=6.1.0">
 </head>
 <body>
   <header class="topbar">
@@ -21,7 +21,7 @@
     </div>
     <div class="top-actions">
       <button id="globalQuickButton" class="top-quick-button" type="button" aria-haspopup="dialog" aria-controls="quickActionSheet" aria-label="クイック操作を開く">＋</button>
-      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v6.0.0</button>
+      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v6.1.0</button>
       <button id="installBtn" class="ghost hidden">ホーム画面に追加</button>
     </div>
   </header>
@@ -435,18 +435,23 @@
       <section class="range-selector-panel">
         <div class="range-selector-block">
           <span class="range-selector-label">ゲーム形式</span>
-          <div class="segmented two range-game-tabs">
+          <div class="segmented three range-game-tabs">
             <button class="segment active" data-range-game="ring" type="button">リング</button>
             <button class="segment" data-range-game="tournament" type="button">トーナメント</button>
+            <button class="segment" data-range-game="headsup" type="button">ヘッズアップ</button>
           </div>
         </div>
 
         <div id="tournamentStackSelector" class="range-selector-block hidden">
           <span class="range-selector-label">有効スタック</span>
-          <div class="segmented three tournament-stack-tabs">
-            <button class="segment" data-tournament-stack="40" type="button">40BB</button>
-            <button class="segment active" data-tournament-stack="25" type="button">25BB</button>
-            <button class="segment" data-tournament-stack="15" type="button">15BB</button>
+          <div class="segmented tournament-stack-tabs">
+            <button class="segment" data-tournament-stack="100" type="button">100</button>
+            <button class="segment" data-tournament-stack="80" type="button">80</button>
+            <button class="segment" data-tournament-stack="60" type="button">60</button>
+            <button class="segment" data-tournament-stack="40" type="button">40</button>
+            <button class="segment active" data-tournament-stack="25" type="button">25</button>
+            <button class="segment" data-tournament-stack="15" type="button">15</button>
+            <button class="segment" data-tournament-stack="10" type="button">10</button>
           </div>
         </div>
 
@@ -944,7 +949,7 @@
         <button id="saveSettingsBtn" class="secondary" type="button">基本設定を保存</button>
         <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">
           <span>アプリバージョン</span>
-          <strong id="settingsVersion">v6.0.0 <span aria-hidden="true">›</span></strong>
+          <strong id="settingsVersion">v6.1.0 <span aria-hidden="true">›</span></strong>
         </button>
       </section>
 
@@ -1011,7 +1016,7 @@
     <div class="current-version-card">
       <div>
         <span class="current-version-label">現在のバージョン</span>
-        <strong id="currentVersionInModal">v6.0.0</strong>
+        <strong id="currentVersionInModal">v6.1.0</strong>
       </div>
       <span class="up-to-date-badge">最新版</span>
     </div>
@@ -1088,7 +1093,7 @@
   </nav>
 
   <div id="toast" class="toast" role="status"></div>
-  <script src="./core-utils.js?v=6.0.0"></script>
-  <script src="./app.js?v=6.0.0"></script>
+  <script src="./core-utils.js?v=6.1.0"></script>
+  <script src="./app.js?v=6.1.0"></script>
 </body>
 </html>

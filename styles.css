@@ -1669,3 +1669,32 @@ main{width:min(860px,100%);padding:14px 14px 20px}
   .session-expense-grid input{font-size:.57rem;padding:5px 1px}
   .tournament-report-grid{grid-template-columns:repeat(2,1fr)}
 }
+
+
+/* v6.1: range format and seven tournament stacks */
+.tournament-stack-tabs{
+  grid-template-columns:repeat(7,minmax(0,1fr));
+}
+.tournament-stack-tabs .segment{
+  min-width:0;
+  padding-left:3px;
+  padding-right:3px;
+  font-size:.64rem;
+}
+.headsup-position-tabs{
+  grid-template-columns:1fr!important;
+}
+.headsup-position-tabs .segment:not(.hidden){
+  max-width:220px;
+  width:100%;
+  margin:0 auto;
+}
+@media(max-width:430px){
+  .range-game-tabs .segment{padding-left:4px;padding-right:4px;font-size:.64rem}
+  .tournament-stack-tabs{gap:3px;padding:4px}
+  .tournament-stack-tabs .segment{padding:8px 1px;font-size:.58rem}
+}
+@media(max-width:350px){
+  .range-game-tabs .segment{font-size:.58rem}
+  .tournament-stack-tabs .segment{font-size:.53rem}
+}
