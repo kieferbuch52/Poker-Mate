@@ -55,3 +55,7 @@ if(!html.includes('id="toggleRangeFrequencyEdit"'))throw new Error('missing freq
 if(!html.includes('id="rangeAssumptionContent"'))throw new Error('missing range provenance panel');
 if(!app.includes('RANGE_FREQUENCY_KEY'))throw new Error('missing frequency persistence');
 if(!app.includes('tournamentActionForStack'))throw new Error('missing tournament action labels');
+
+if(!html.includes('data-range-source="yokosawa"'))throw new Error('missing Yokosawa source');
+if(!app.includes('const YOKOSAWA_TIER_ROWS'))throw new Error('missing Yokosawa chart');
+if(!app.includes('renderYokosawaRange'))throw new Error('missing Yokosawa renderer');

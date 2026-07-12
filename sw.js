@@ -1,5 +1,5 @@
-const CACHE = 'poker-mate-v70';
-const ASSETS = ['./','./index.html','./core-utils.js?v=7.0.0','./styles.css?v=7.0.0','./app.js?v=7.0.0','./equity-worker.js?v=7.0.0','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
+const CACHE = 'poker-mate-v80';
+const ASSETS = ['./','./index.html','./core-utils.js?v=8.0.0','./styles.css?v=8.0.0','./app.js?v=8.0.0','./equity-worker.js?v=8.0.0','./auth.mjs?v=8.0.0','./firebase-config.js?v=8.0.0','./FIREBASE_SETUP.md','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting()));
 });

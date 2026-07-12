@@ -11,17 +11,20 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./styles.css?v=7.0.0">
+  <link rel="stylesheet" href="./styles.css?v=8.0.0">
 </head>
 <body>
   <header class="topbar">
-    <div>
-      <p class="eyebrow">POKER COMPANION</p>
-      <h1>Poker Mate</h1>
+    <div class="topbar-context">
+      <div class="app-mark" aria-hidden="true">♠</div>
+      <div><p id="activePageEyebrow" class="eyebrow">POKER MATE</p><h1 id="activePageTitle">ホーム</h1></div>
     </div>
     <div class="top-actions">
+      <button id="headerUserButton" class="header-user-button" type="button" data-open-account aria-label="アカウント設定を開く">
+        <span id="headerUserAvatar" class="header-user-avatar">G</span><span id="headerUserLabel">未ログイン</span>
+      </button>
       <button id="globalQuickButton" class="top-quick-button" type="button" aria-haspopup="dialog" aria-controls="quickActionSheet" aria-label="クイック操作を開く">＋</button>
-      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v7.0.0</button>
+      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v8.0.0</button>
       <button id="installBtn" class="ghost hidden">ホーム画面に追加</button>
     </div>
   </header>
@@ -57,9 +60,11 @@
         </div>
         <div class="home-quick-actions">
           <button type="button" data-quick-action="session"><span>＋</span><strong>収支を記録</strong><small>リング・MTT</small></button>
+          <button type="button" data-quick-action="range"><span>▦</span><strong>レンジ確認</strong><small>標準・ヨコサワ式</small></button>
+          <button type="button" data-quick-action="equity"><span>♠</span><strong>勝率計算</strong><small>カード・レンジ</small></button>
+          <button type="button" data-quick-action="odds"><span>%</span><strong>必要勝率</strong><small>レーキ対応</small></button>
           <button type="button" data-quick-action="chip"><span>◎</span><strong>チップ取引</strong><small>購入・換金</small></button>
-          <button type="button" data-quick-action="equity"><span>♠</span><strong>勝率計算</strong><small>カード選択式</small></button>
-          <button type="button" data-quick-action="odds"><span>%</span><strong>必要勝率</strong><small>ポットオッズ</small></button>
+          <button type="button" data-quick-action="review"><span>✎</span><strong>ハンドメモ</strong><small>振り返り</small></button>
         </div>
       </section>
 
@@ -432,7 +437,15 @@
         </div>
       </div>
 
-      <section class="range-selector-panel">
+      <section class="range-selector-panel range-control-shell">
+        <div class="range-source-switch">
+          <span class="range-selector-label">レンジの種類</span>
+          <div class="segmented two">
+            <button class="segment active" data-range-source="pokerMate" type="button">Poker Mate</button>
+            <button class="segment" data-range-source="yokosawa" type="button">ヨコサワ式</button>
+          </div>
+        </div>
+        <div id="pokerMateRangeControls">
         <div class="range-selector-block">
           <span class="range-selector-label">ゲーム形式</span>
           <div class="segmented three range-game-tabs">
@@ -496,6 +509,18 @@
           <button id="resetRangeFrequency" type="button" class="ghost compact-button">頻度をリセット</button>
           <span id="rangeFrequencyStatus">固定レンジ表示</span>
         </div>
+        </div>
+        <div id="yokosawaRangeControls" class="hidden yokosawa-controls">
+          <label>参加基準
+            <select id="yokosawaThreshold">
+              <option value="navy">後ろ8人・強</option><option value="red">後ろ8人・中</option>
+              <option value="yellow">後ろ8人・弱</option><option value="green" selected>後ろ6〜7人</option>
+              <option value="blue">後ろ4〜5人</option><option value="white">後ろ3人</option>
+              <option value="purple">後ろ2人</option><option value="pink">BBでBTNレイズにコール</option>
+            </select>
+          </label>
+          <div class="yokosawa-guide-summary"><strong>100BB・アンティなしの初心者向け判断表</strong><span>公開された色ランクを13×13グリッドへ独自再構成しています。</span></div>
+        </div>
       </section>
 
       <section class="panel">
@@ -520,6 +545,10 @@
           <summary>このレンジの前提・精度</summary>
           <div id="rangeAssumptionContent"></div>
         </details>
+        <div id="yokosawaAttribution" class="yokosawa-attribution hidden">
+          <p>世界のヨコサワさんが公開している色ランクと運用ルールをPoker Mate用に独自再構成した非公式表示です。公式画像そのものではありません。</p>
+          <div><a href="https://www.youtube.com/watch?v=NDouTGvor-k" target="_blank" rel="noopener noreferrer">公式解説動画</a><a href="https://x.com/MasatoYokosawa/status/1492782429123317763" target="_blank" rel="noopener noreferrer">公開投稿</a></div>
+        </div>
       </section>
     </section>
 
@@ -869,8 +898,8 @@
 
       <div class="segmented three more-view-tabs">
         <button class="segment active" data-more-view="review">振り返り</button>
-        <button class="segment" data-more-view="bankroll">バンクロール</button>
-        <button class="segment" data-more-view="settings">設定・データ</button>
+        <button class="segment" data-more-view="bankroll">資金</button>
+        <button class="segment" data-more-view="settings">設定</button>
       </div>
 
       <div id="moreReviewView" data-more-section="review">
@@ -974,6 +1003,31 @@
       </div>
 
       <div id="moreSettingsView" class="hidden" data-more-section="settings">
+      <section id="accountSettingsPanel" class="panel account-settings-panel">
+        <div class="section-head"><div><p class="eyebrow">ACCOUNT</p><h3>Googleアカウント</h3></div><span id="authStatusBadge" class="summary-badge">未設定</span></div>
+        <div class="account-profile-row"><div id="accountAvatar" class="account-avatar">G</div><div class="account-profile-copy"><strong id="accountDisplayName">Googleログイン未設定</strong><span id="accountEmail">Firebase設定後にログインできます</span><small>ログインはユーザー識別用です。収支データは端末内保存のままで、自動クラウド同期は行いません。</small></div></div>
+        <div class="account-action-row"><button id="googleSignInBtn" class="primary" type="button" disabled>Googleでログイン</button><button id="googleSignOutBtn" class="ghost hidden" type="button">ログアウト</button></div>
+        <details id="firebaseConfigDetails" class="firebase-config-details">
+          <summary>Firebase接続設定</summary>
+          <p class="hint">FirebaseのWebアプリ設定を入力します。サービスアカウント秘密鍵やクライアントシークレットは入力しないでください。</p>
+          <div class="firebase-config-grid">
+            <label>API Key<input id="firebaseApiKey" type="text" autocomplete="off"></label>
+            <label>Auth Domain<input id="firebaseAuthDomain" type="text" placeholder="project.firebaseapp.com" autocomplete="off"></label>
+            <label>Project ID<input id="firebaseProjectId" type="text" autocomplete="off"></label>
+            <label>App ID<input id="firebaseAppId" type="text" autocomplete="off"></label>
+            <label>Messaging Sender ID<input id="firebaseSenderId" type="text" autocomplete="off"></label>
+            <label>Storage Bucket<input id="firebaseStorageBucket" type="text" autocomplete="off"></label>
+          </div>
+          <div class="button-row"><button id="saveFirebaseConfigBtn" class="secondary" type="button">設定を保存して再読み込み</button><button id="clearFirebaseConfigBtn" class="ghost" type="button">設定を削除</button></div>
+          <p class="hint">Firebase AuthenticationでGoogleを有効化し、GitHub PagesのドメインをAuthorized domainsへ追加してください。</p>
+        </details>
+      </section>
+      <section id="displaySettingsPanel" class="panel">
+        <div><p class="eyebrow">DISPLAY</p><h3>表示設定</h3></div>
+        <div class="grid two"><label>表示密度<select id="uiDensity"><option value="standard">標準</option><option value="compact">コンパクト</option></select></label><label>アニメーション<select id="uiMotion"><option value="standard">標準</option><option value="reduced">少なめ</option></select></label></div>
+        <label class="toggle-setting-row"><input id="uiStickyControls" type="checkbox" checked><span><strong>操作タブを上部へ固定</strong><small>ツール・管理画面の切り替えをスクロール中も表示します。</small></span></label>
+        <button id="saveDisplaySettingsBtn" class="secondary" type="button">表示設定を保存</button>
+      </section>
       <section id="ringStakeSettingsPanel" class="panel">
         <div class="section-head stake-settings-head">
           <div>
@@ -1019,7 +1073,7 @@
         <button id="saveSettingsBtn" class="secondary" type="button">基本設定を保存</button>
         <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">
           <span>アプリバージョン</span>
-          <strong id="settingsVersion">v7.0.0 <span aria-hidden="true">›</span></strong>
+          <strong id="settingsVersion">v8.0.0 <span aria-hidden="true">›</span></strong>
         </button>
       </section>
 
@@ -1086,7 +1140,7 @@
     <div class="current-version-card">
       <div>
         <span class="current-version-label">現在のバージョン</span>
-        <strong id="currentVersionInModal">v7.0.0</strong>
+        <strong id="currentVersionInModal">v8.0.0</strong>
       </div>
       <span class="up-to-date-badge">最新版</span>
     </div>
@@ -1159,11 +1213,13 @@
     <button class="nav-item" data-go="venues"><span>◎</span><small>店舗</small></button>
     <button class="nav-item" data-go="ranges"><span>▦</span><small>レンジ</small></button>
     <button class="nav-item" data-go="tools"><span>%</span><small>ツール</small></button>
-    <button class="nav-item" data-go="more"><span>⋯</span><small>その他</small></button>
+    <button class="nav-item" data-go="more"><span>⋯</span><small>管理</small></button>
   </nav>
 
   <div id="toast" class="toast" role="status"></div>
-  <script src="./core-utils.js?v=7.0.0"></script>
-  <script src="./app.js?v=7.0.0"></script>
+  <script src="./firebase-config.js?v=8.0.0"></script>
+  <script src="./core-utils.js?v=8.0.0"></script>
+  <script src="./app.js?v=8.0.0"></script>
+  <script type="module" src="./auth.mjs?v=8.0.0"></script>
 </body>
 </html>

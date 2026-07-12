@@ -1,11 +1,26 @@
 'use strict';
 
-const APP_VERSION = '7.0.0';
+const APP_VERSION = '8.0.0';
 const APP_CHANGELOG = [
+  {
+    version:'8.0.0',
+    title:'UI整理・ヨコサワ式レンジ・Google認証',
+    current:true,
+    changes:[
+      'ヘッダーへ現在ページ名とGoogleアカウント表示を追加',
+      'ホームのクイック操作を6項目へ整理',
+      '表示密度・アニメーション・固定タブ設定を追加',
+      'レンジをPoker Mate式とヨコサワ式で切り替え可能に変更',
+      '世界のヨコサワ公開レンジの色ランクを独自グリッドとして再構成',
+      '後ろの人数別に参加候補を強調する機能を追加',
+      'Firebase Authenticationによる任意のGoogleログインを追加',
+      'Googleログインはユーザー識別のみとし、データは端末内保存を継続'
+    ]
+  },
   {
     version:'7.0.0',
     title:'ポーカーツールの精度と適用条件を刷新',
-    current:true,
+    current:false,
     changes:[
       'レンジへ卓人数・アンティ・ICM・相手オープンサイズの条件設定を追加',
       'レンジの基準データと簡易補正内容を画面内へ明記',
@@ -739,6 +754,8 @@ function loadUiState(){
     lastSessionType:'cash',
     lastVenueId:'',
     lastStake:'',
+    rangeSource:'pokerMate',
+    yokosawaThreshold:'green',
     rangeGame:'ring',
     tournamentStack:'25',
     headsUpStack:'20',
@@ -753,6 +770,9 @@ function loadUiState(){
     equityHeroMode:'fixed',
     equityVillainMode:'random',
     equityPlayer3:false,
+    uiDensity:'standard',
+    uiMotion:'standard',
+    uiStickyControls:true,
     reportMode:'month',
     reportPeriod:''
   };
@@ -1184,6 +1204,29 @@ function performanceStats(list){
   };
 }
 
+
+const PAGE_META={
+  home:{eyebrow:'POKER MATE',title:'ホーム'},
+  sessions:{eyebrow:'SESSION LOG',title:'収支を記録'},
+  venues:{eyebrow:'VENUES & CHIPS',title:'店舗・チップ'},
+  ranges:{eyebrow:'PREFLOP RANGE',title:'レンジ'},
+  tools:{eyebrow:'POKER TOOLS',title:'計算ツール'},
+  more:{eyebrow:'REVIEW & DATA',title:'管理'}
+};
+function applyUiPreferences(){
+  document.body.dataset.density=uiState.uiDensity||'standard';
+  document.body.dataset.motion=uiState.uiMotion||'standard';
+  document.body.classList.toggle('sticky-controls-disabled',uiState.uiStickyControls===false);
+  if(document.getElementById('uiDensity'))document.getElementById('uiDensity').value=uiState.uiDensity||'standard';
+  if(document.getElementById('uiMotion'))document.getElementById('uiMotion').value=uiState.uiMotion||'standard';
+  if(document.getElementById('uiStickyControls'))document.getElementById('uiStickyControls').checked=uiState.uiStickyControls!==false;
+}
+function updateTopbarContext(pageId){
+  const meta=PAGE_META[pageId]||PAGE_META.home;
+  document.getElementById('activePageEyebrow').textContent=meta.eyebrow;
+  document.getElementById('activePageTitle').textContent=meta.title;
+}
+
 function showToast(msg){
   const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show');
   clearTimeout(showToast.t); showToast.t=setTimeout(()=>el.classList.remove('show'),1800);
@@ -1193,7 +1236,8 @@ function go(pageId){
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id===pageId));
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.go===pageId));
   document.body.dataset.page=pageId;
-  window.scrollTo({top:0,behavior:'smooth'});
+  updateTopbarContext(pageId);
+  window.scrollTo({top:0,behavior:document.body.dataset.motion==='reduced'?'auto':'smooth'});
   if(pageId==='home')renderHome();
   if(pageId==='sessions')renderSessions();
   if(pageId==='venues'){renderVenues();setVenueView(uiState.venueView||'list',false);}
@@ -1208,6 +1252,12 @@ function go(pageId){
   }
 }
 document.addEventListener('click',e=>{
+  const accountTarget=e.target.closest('[data-open-account]');
+  if(accountTarget){
+    go('more');setMoreView('settings');
+    setTimeout(()=>document.getElementById('accountSettingsPanel')?.scrollIntoView({behavior:document.body.dataset.motion==='reduced'?'auto':'smooth',block:'start'}),80);
+    return;
+  }
   const target=e.target.closest('[data-go]');
   if(target) go(target.dataset.go);
 });
@@ -2097,6 +2147,62 @@ function adjustSetByPercent(base,percent){const set=new Set(base||[]);if(!percen
 function currentRangeAdjustment(){if(currentRangeGame==='headsup')return 0;let a=0;if(uiState.rangeTableSize==='9')a+=8;if(currentRangeGame==='tournament'&&uiState.rangeAnte==='none')a+=5;if(currentRangeGame==='tournament'&&uiState.rangeIcm==='bubble')a+=8;if(currentRangeGame==='tournament'&&uiState.rangeIcm==='final')a+=12;return a;}
 function adjustDefenseForOpenSize(defense){const size=num(uiState.rangeOpenSize||2.5),threebet=new Set(defense?.threebet||[]);let call=new Set(defense?.call||[]);const sizeAdj=size<=2?-14:size<=2.2?-7:size<=2.5?0:size<=3?11:24;call=adjustSetByPercent(call,sizeAdj);const cond=currentRangeAdjustment();if(cond>0)call=adjustSetByPercent(call,cond);threebet.forEach(h=>call.delete(h));return {threebet,call};}
 function tournamentActionForStack(stack){const v=Number(stack);if(v<=10)return {type:'shove',label:'ALL-IN候補'};if(v===15)return {type:'mixed',label:'2BB OPEN / ALL-IN混合'};return {type:'open',label:'RFI'};}
+
+const YOKOSAWA_TIER_ORDER=['navy','red','yellow','green','blue','white','purple','pink','fold'];
+const YOKOSAWA_TIER_META={
+  navy:{label:'8人・強',short:'8強'},red:{label:'8人・中',short:'8中'},
+  yellow:{label:'8人・弱',short:'8弱'},green:{label:'後ろ6〜7人',short:'6〜7'},
+  blue:{label:'後ろ4〜5人',short:'4〜5'},white:{label:'後ろ3人',short:'3人'},
+  purple:{label:'後ろ2人',short:'2人'},pink:{label:'BBでBTNレイズにコール',short:'BB'},
+  fold:{label:'フォールド',short:'Fold'}
+};
+/* 公開された色ランクをPoker Mate用13x13グリッドへ独自再構成。公式画像ではありません。 */
+const YOKOSAWA_TIER_ROWS=[
+ ['navy','navy','red','red','red','green','green','green','green','green','green','green','green'],
+ ['navy','navy','red','yellow','green','green','white','white','white','white','white','white','white'],
+ ['red','yellow','navy','yellow','green','blue','white','white','white','purple','purple','purple','purple'],
+ ['yellow','green','blue','red','yellow','blue','white','white','purple','pink','pink','pink','pink'],
+ ['green','blue','white','blue','red','green','blue','purple','pink','pink','pink','pink','fold'],
+ ['blue','white','white','white','white','red','blue','white','purple','pink','fold','fold','fold'],
+ ['white','pink','pink','pink','pink','purple','yellow','white','purple','pink','fold','fold','fold'],
+ ['white','pink','pink','fold','fold','pink','pink','yellow','white','purple','pink','fold','fold'],
+ ['purple','pink','fold','fold','fold','fold','fold','fold','green','white','purple','pink','fold'],
+ ['pink','pink','fold','fold','fold','fold','fold','fold','fold','green','purple','pink','fold'],
+ ['pink','fold','fold','fold','fold','fold','fold','fold','fold','fold','blue','pink','fold'],
+ ['pink','fold','fold','fold','fold','fold','fold','fold','fold','fold','fold','blue','fold'],
+ ['pink','fold','fold','fold','fold','fold','fold','fold','fold','fold','fold','fold','blue']
+];
+const yokosawaTierByHand=(()=>{
+ const map={};
+ for(let row=0;row<13;row++)for(let col=0;col<13;col++)map[handLabel(row,col)]=YOKOSAWA_TIER_ROWS[row][col];
+ return map;
+})();
+function renderYokosawaRange(){
+ const threshold=uiState.yokosawaThreshold||'green';
+ const thresholdIndex=YOKOSAWA_TIER_ORDER.indexOf(threshold);
+ document.getElementById('rangePageTitle').textContent='ヨコサワ式 ハンドランク表';
+ document.getElementById('rangeContextBadge').textContent='ヨコサワ式・公開版再構成';
+ document.getElementById('rangeActionBadge').classList.remove('hidden','shove');
+ document.getElementById('rangeActionBadge').textContent=YOKOSAWA_TIER_META[threshold].short;
+ document.getElementById('rangeContextDescription').textContent='100BB・アンティなし／後ろの人数で参加基準を選択';
+ document.getElementById('rangePositionTabs').classList.add('hidden');
+ document.getElementById('rangeLegend').innerHTML=YOKOSAWA_TIER_ORDER.map(tier=>`<span><i class="dot yokosawa-${tier}"></i>${YOKOSAWA_TIER_META[tier].short}</span>`).join('');
+ document.getElementById('rangeGrid').innerHTML=ranks.flatMap((_,row)=>ranks.map((__,col)=>{
+   const hand=handLabel(row,col),tier=yokosawaTierByHand[hand]||'fold';
+   const active=tier!=='fold'&&YOKOSAWA_TIER_ORDER.indexOf(tier)<=thresholdIndex;
+   return `<button class="hand-cell yokosawa-cell yokosawa-${tier} ${active?'yokosawa-active':'yokosawa-below'}" title="${hand}：${YOKOSAWA_TIER_META[tier].label}">${hand}</button>`;
+ })).join('');
+ document.getElementById('rangeHint').textContent=threshold==='pink'
+   ?'BBでBTNのレイズを受けた場面では、桃色までをコール候補とする簡易ルールです。'
+   :'選択した「後ろの人数」の色以上を、First inの参加候補として強調しています。';
+ document.getElementById('rangeAssumptionContent').innerHTML=`<dl>
+   <div><dt>想定</dt><dd>100BB・アンティなし。公開された色ランクを独自再構成。</dd></div>
+   <div><dt>First in</dt><dd>自分の後ろに残る人数に対応する色以上を参加候補にします。</dd></div>
+   <div><dt>対レイズ</dt><dd>相手の下限色より1段上をコール、2段上を3ベットする簡易ルールです。</dd></div>
+   <div><dt>注意</dt><dd>マルチウェイでは1段タイト、アンティありでは1段ルースが目安です。</dd></div>
+ </dl><p>非公式の再構成表示です。正確な説明は公式動画を確認してください。</p>`;
+}
+
 function rangeScenario(){
   if(currentRangeGame==='ring')return {gameLabel:'リング',stackLabel:'100BB',context:'6-max・100BBの学習用固定レンジ',positions:['UTG','HJ','CO','BTN','SB'],rfi:ranges,defense:bbDefenseRanges,source:'Poker Mate学習用固定レンジ（ソルバー出力ではありません）'};
   if(currentRangeGame==='headsup'){const stack=currentHeadsUpStack,action=headsUpActionConfig[stack];return {gameLabel:'ヘッズアップ',stackLabel:`${stack}BB`,context:`BTN/SB対BB・${stack}BB・基準アクション ${action.label}`,positions:['BTN'],rfi:headsUpRfiRanges[stack],defense:headsUpBbDefenseRanges[stack],rfiAction:action,source:'Poker Mate学習用ヘッズアップ簡易モデル（リンプ・混合頻度を単純化）'};}
@@ -2107,6 +2213,14 @@ function rangeFrequencyForHand(hand,active){const custom=rangeFrequencyStore[ran
 function cycleRangeFrequency(hand,active){const key=rangeScenarioKey(),cur=rangeFrequencyForHand(hand,active),seq=[0,25,50,75,100],next=seq[(seq.indexOf(cur)+1)%seq.length];rangeFrequencyStore[key]||={};rangeFrequencyStore[key][hand]=next;saveRangeFrequencyStore();}
 function renderRangeAssumptions(s){const a=[];if(currentRangeGame!=='headsup'&&uiState.rangeTableSize==='9')a.push('9-max向けに下位境界を約8%タイト化');if(currentRangeGame==='tournament'&&uiState.rangeAnte==='none')a.push('アンティなしとして約5%タイト化');if(currentRangeGame==='tournament'&&uiState.rangeIcm==='bubble')a.push('バブル簡易補正');if(currentRangeGame==='tournament'&&uiState.rangeIcm==='final')a.push('FT簡易補正');if(currentRangeMode==='bb'&&num(uiState.rangeOpenSize)!==2.5)a.push(`${uiState.rangeOpenSize}BBオープン向けにディフェンス幅を簡易補正`);document.getElementById('rangeAssumptionContent').innerHTML=`<dl><div><dt>基準データ</dt><dd>${esc(s.source)}</dd></div><div><dt>現在の前提</dt><dd>${esc(s.context)}${currentRangeMode==='bb'?`・相手${uiState.rangeOpenSize}BBオープン`:''}</dd></div><div><dt>補正</dt><dd>${a.length?esc(a.join('／')):'なし（基準条件）'}</dd></div><div><dt>混合頻度</dt><dd>${rangeFrequencyEdit?'セルをタップして0→25→50→75→100%で編集できます。':'既定値は0%または100%。頻度編集で自分のソルバー値を登録できます。'}</dd></div></dl><p>GTOソルバーの生データではありません。レーキ、ICM、相手傾向で実戦レンジは変わります。</p>`;}
 function renderRangeGrid(){
+ const source=uiState.rangeSource||'pokerMate';
+ document.querySelectorAll('[data-range-source]').forEach(button=>button.classList.toggle('active',button.dataset.rangeSource===source));
+ document.getElementById('pokerMateRangeControls').classList.toggle('hidden',source!=='pokerMate');
+ document.getElementById('yokosawaRangeControls').classList.toggle('hidden',source!=='yokosawa');
+ document.getElementById('yokosawaAttribution').classList.toggle('hidden',source!=='yokosawa');
+ document.getElementById('yokosawaThreshold').value=uiState.yokosawaThreshold||'green';
+ if(source==='yokosawa'){renderYokosawaRange();return;}
+ document.getElementById('rangePositionTabs').classList.remove('hidden');
  const s=rangeScenario();if(!s.positions.includes(currentRangePosition)){currentRangePosition=s.positions[0];updateUiState({rangePosition:currentRangePosition});}
  document.querySelectorAll('[data-range-game]').forEach(b=>b.classList.toggle('active',b.dataset.rangeGame===currentRangeGame));document.getElementById('tournamentStackSelector').classList.toggle('hidden',currentRangeGame!=='tournament');document.getElementById('headsUpStackSelector').classList.toggle('hidden',currentRangeGame!=='headsup');document.querySelectorAll('[data-tournament-stack]').forEach(b=>b.classList.toggle('active',b.dataset.tournamentStack===currentTournamentStack));document.querySelectorAll('[data-headsup-stack]').forEach(b=>b.classList.toggle('active',b.dataset.headsupStack===currentHeadsUpStack));document.querySelectorAll('[data-range-mode]').forEach(b=>b.classList.toggle('active',b.dataset.rangeMode===currentRangeMode));
  document.querySelectorAll('[data-position]').forEach(b=>{const p=b.dataset.position,v=s.positions.includes(p);b.classList.toggle('hidden',!v);b.classList.toggle('active',v&&p===currentRangePosition);b.textContent=currentRangeGame==='headsup'&&p==='BTN'?(currentRangeMode==='bb'?'vs BTN/SB':'BTN/SB'):(currentRangeMode==='bb'?`vs ${p}`:p);});
@@ -2122,6 +2236,12 @@ function renderRangeGrid(){
  }
  renderRangeAssumptions(s);
 }
+document.querySelectorAll('[data-range-source]').forEach(button=>button.addEventListener('click',()=>{
+ updateUiState({rangeSource:button.dataset.rangeSource});renderRangeGrid();
+}));
+document.getElementById('yokosawaThreshold').addEventListener('change',()=>{
+ updateUiState({yokosawaThreshold:document.getElementById('yokosawaThreshold').value});renderRangeGrid();
+});
 document.querySelectorAll('[data-range-game]').forEach(b=>b.addEventListener('click',()=>{currentRangeGame=b.dataset.rangeGame;if(currentRangeGame==='headsup')currentRangePosition='BTN';updateUiState({rangeGame:currentRangeGame,rangePosition:currentRangePosition});renderRangeGrid();}));document.querySelectorAll('[data-tournament-stack]').forEach(b=>b.addEventListener('click',()=>{currentTournamentStack=b.dataset.tournamentStack;updateUiState({tournamentStack:currentTournamentStack});renderRangeGrid();}));document.querySelectorAll('[data-headsup-stack]').forEach(b=>b.addEventListener('click',()=>{currentHeadsUpStack=b.dataset.headsupStack;updateUiState({headsUpStack:currentHeadsUpStack});renderRangeGrid();}));document.querySelectorAll('[data-range-mode]').forEach(b=>b.addEventListener('click',()=>{currentRangeMode=b.dataset.rangeMode;updateUiState({rangeMode:currentRangeMode});renderRangeGrid();}));document.querySelectorAll('[data-position]').forEach(b=>b.addEventListener('click',()=>{if(b.classList.contains('hidden'))return;currentRangePosition=b.dataset.position;updateUiState({rangePosition:currentRangePosition});renderRangeGrid();}));['rangeTableSize','rangeAnte','rangeIcm','rangeOpenSize'].forEach(id=>document.getElementById(id).addEventListener('change',()=>{updateUiState({[id]:document.getElementById(id).value});renderRangeGrid();}));document.getElementById('toggleRangeFrequencyEdit').addEventListener('click',()=>{rangeFrequencyEdit=!rangeFrequencyEdit;updateUiState({rangeFrequencyEdit});renderRangeGrid();});document.getElementById('resetRangeFrequency').addEventListener('click',()=>{delete rangeFrequencyStore[rangeScenarioKey()];saveRangeFrequencyStore();renderRangeGrid();showToast('現在の条件の頻度をリセットしました');});document.getElementById('rangeGrid').addEventListener('click',e=>{const cell=e.target.closest('[data-range-hand]');if(!cell||!rangeFrequencyEdit)return;cycleRangeFrequency(cell.dataset.rangeHand,cell.dataset.defaultActive==='1');renderRangeGrid();});
 
 function setTool(tool,save=true){
@@ -2945,6 +3065,8 @@ function closeQuickActionSheet(){
 }
 function runQuickAction(action){
   closeQuickActionSheet();
+  if(action==='range'){go('ranges');return;}
+  if(action==='review'){go('more');setMoreView('review');openCollapsible('hand-input');return;}
   if(action==='session'){
     go('sessions');openCollapsible('session-input');
     setTimeout(()=>document.getElementById('sessionForm').scrollIntoView({behavior:'smooth',block:'start'}),60);
@@ -3024,7 +3146,14 @@ document.addEventListener('keydown',event=>{
   }
 });
 
+
+document.getElementById('saveDisplaySettingsBtn').addEventListener('click',()=>{
+ updateUiState({uiDensity:document.getElementById('uiDensity').value,uiMotion:document.getElementById('uiMotion').value,uiStickyControls:document.getElementById('uiStickyControls').checked});
+ applyUiPreferences();showToast('表示設定を保存しました');
+});
+
 function renderSettings(){
+  applyUiPreferences();
   document.getElementById('appVersion').textContent=`v${APP_VERSION}`;
   document.getElementById('settingsVersion').innerHTML=`v${APP_VERSION} <span aria-hidden="true">›</span>`;
   document.getElementById('baseCurrency').value=state.settings.baseCurrency||'JPY';
@@ -3200,6 +3329,37 @@ function downloadBlob(filename,content,type){
   const blob=new Blob([content],{type}),url=URL.createObjectURL(blob),anchor=document.createElement('a');anchor.href=url;anchor.download=filename;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function formatBackupTime(value){return value?new Date(value).toLocaleString('ja-JP'):'未実施';}
+
+const FIREBASE_CONFIG_KEY='pokerMateFirebaseConfigV1';
+let currentAuthUser=null;
+function loadFirebaseConfig(){try{const value=JSON.parse(localStorage.getItem(FIREBASE_CONFIG_KEY));return value&&typeof value==='object'?value:{};}catch(error){return {};}}
+function firebaseConfigIsComplete(config){return Boolean(config.apiKey&&config.authDomain&&config.projectId&&config.appId);}
+function populateFirebaseConfigForm(){
+ const config=loadFirebaseConfig(),map={firebaseApiKey:'apiKey',firebaseAuthDomain:'authDomain',firebaseProjectId:'projectId',firebaseAppId:'appId',firebaseSenderId:'messagingSenderId',firebaseStorageBucket:'storageBucket'};
+ Object.entries(map).forEach(([id,key])=>document.getElementById(id).value=config[key]||'');
+}
+function authInitials(user){const name=user?.displayName||user?.email||'G';return name.trim().slice(0,1).toUpperCase()||'G';}
+function renderAuthState(detail={}){
+ const configured=Boolean(detail.configured);currentAuthUser=detail.user||null;const signedIn=Boolean(currentAuthUser);
+ const badge=document.getElementById('authStatusBadge');badge.textContent=signedIn?'ログイン中':configured?'ログアウト中':'未設定';badge.className=`summary-badge ${signedIn?'positive':configured?'':'warning'}`;
+ document.getElementById('accountDisplayName').textContent=signedIn?(currentAuthUser.displayName||'Googleユーザー'):configured?'Googleログインを利用できます':'Googleログイン未設定';
+ document.getElementById('accountEmail').textContent=signedIn?(currentAuthUser.email||'メール非公開'):configured?'ボタンからログインしてください':'Firebase設定後にログインできます';
+ document.getElementById('googleSignInBtn').disabled=!configured||signedIn;document.getElementById('googleSignInBtn').classList.toggle('hidden',signedIn);document.getElementById('googleSignOutBtn').classList.toggle('hidden',!signedIn);
+ const initials=authInitials(currentAuthUser),photo=signedIn&&currentAuthUser.photoURL?`url("${currentAuthUser.photoURL}")`:'';
+ for(const id of ['accountAvatar','headerUserAvatar']){const el=document.getElementById(id);el.textContent=initials;el.style.backgroundImage=photo;el.classList.toggle('has-photo',Boolean(photo));}
+ document.getElementById('headerUserLabel').textContent=signedIn?(currentAuthUser.displayName||'ログイン中'):'未ログイン';
+}
+document.getElementById('saveFirebaseConfigBtn').addEventListener('click',()=>{
+ const config={apiKey:document.getElementById('firebaseApiKey').value.trim(),authDomain:document.getElementById('firebaseAuthDomain').value.trim(),projectId:document.getElementById('firebaseProjectId').value.trim(),appId:document.getElementById('firebaseAppId').value.trim(),messagingSenderId:document.getElementById('firebaseSenderId').value.trim(),storageBucket:document.getElementById('firebaseStorageBucket').value.trim()};
+ if(!firebaseConfigIsComplete(config)){alert('API Key、Auth Domain、Project ID、App IDは必須です。');return;}
+ localStorage.setItem(FIREBASE_CONFIG_KEY,JSON.stringify(config));location.reload();
+});
+document.getElementById('clearFirebaseConfigBtn').addEventListener('click',()=>{if(!confirm('この端末に保存したFirebase接続設定を削除しますか？'))return;localStorage.removeItem(FIREBASE_CONFIG_KEY);location.reload();});
+document.getElementById('googleSignInBtn').addEventListener('click',async()=>{try{await window.PokerMateAuth?.signIn();}catch(error){alert(`Googleログインに失敗しました。\n${error.message}`);}});
+document.getElementById('googleSignOutBtn').addEventListener('click',async()=>{try{await window.PokerMateAuth?.signOut();}catch(error){alert(`ログアウトに失敗しました。\n${error.message}`);}});
+window.addEventListener('poker-mate-auth-state',event=>renderAuthState(event.detail));
+window.addEventListener('poker-mate-auth-error',event=>{renderAuthState({configured:firebaseConfigIsComplete(loadFirebaseConfig()),user:null});console.warn('Poker Mate auth:',event.detail);});
+
 function renderBackupStatus(){
   const backups=loadAutoBackups();
   const latest=backups[0];
@@ -3268,5 +3428,6 @@ function renderAll(){
   setMoreView(uiState.moreView||'review',false);
   setTool(uiState.lastTool==='raise'?'odds':(uiState.lastTool||'odds'),false);
 }
+applyUiPreferences();populateFirebaseConfigForm();renderAuthState({configured:firebaseConfigIsComplete(loadFirebaseConfig()),user:null});updateTopbarContext('home');
 document.getElementById('sessionDate').value=today();document.getElementById('handDate').value=today();document.getElementById('bankrollTransactionDate').value=today();document.getElementById('chipTransactionDate').value=today();
 document.getElementById('equityHeroMode').value=uiState.equityHeroMode||'fixed';document.getElementById('equityVillainMode').value=uiState.equityVillainMode||'random';buildPnHandPicker();initializeSmartNumberInputs();initializeCollapsibleSections();resetSessionForm();renderAll();renderVisualCards();renderBackupStatus();
