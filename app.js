@@ -1,11 +1,21 @@
 'use strict';
 
-const APP_VERSION = '3.5.2';
+const APP_VERSION = '3.6.0';
 const APP_CHANGELOG = [
+  {
+    version:'3.6.0',
+    title:'ドラッグ並び替えと表示修正',
+    current:true,
+    changes:[
+      'リングステークス候補をドラッグ＆ドロップで並び替え可能に変更',
+      'ホームの直近セッションから編集・削除できない不具合を修正',
+      'TTPやVEなど店舗ポイントを小数点なしの整数表示へ統一'
+    ]
+  },
   {
     version:'3.5.2',
     title:'ステークス並び替え',
-    current:true,
+    current:false,
     changes:[
       '設定画面でリングステークス候補を上下に並び替え可能に変更',
       '保存した並び順をリング収支入力の選択肢へ反映',
@@ -245,18 +255,20 @@ function renderRingStakeSettings(){
   count.textContent=`${stakes.length}件`;
   list.innerHTML=stakes.length
     ?stakes.map((value,index)=>`
-      <div class="ring-stake-item" data-ring-stake-item="${esc(value)}">
+      <div class="ring-stake-item" data-ring-stake-item="${esc(value)}" draggable="true">
+        <button class="stake-drag-handle" type="button" data-drag-ring-stake="${esc(value)}" aria-label="${esc(formatStakeValue(value))}をドラッグして並び替え">
+          <span aria-hidden="true">⠿</span>
+        </button>
         <span class="stake-order-number" aria-label="${index+1}番目">${index+1}</span>
         <span class="stake-blind-label"><small>SB / BB</small><strong>${esc(formatStakeValue(value))}</strong></span>
         <div class="stake-item-actions">
-          <button class="stake-move-btn" type="button" data-move-ring-stake="${esc(value)}" data-direction="-1" aria-label="${esc(formatStakeValue(value))}を上へ移動" ${index===0?'disabled':''}>↑</button>
-          <button class="stake-move-btn" type="button" data-move-ring-stake="${esc(value)}" data-direction="1" aria-label="${esc(formatStakeValue(value))}を下へ移動" ${index===stakes.length-1?'disabled':''}>↓</button>
           <button class="mini-btn delete" type="button" data-delete-ring-stake="${esc(value)}">削除</button>
         </div>
       </div>
     `).join('')
     :'<p class="empty muted">候補がありません。SBとBBを入力して追加してください。</p>';
   renderRingStakeOptions();
+  initializeRingStakeDragAndDrop();
 }
 
 function initialState(){
@@ -320,6 +332,14 @@ function fmt(n,currency=state.settings.baseCurrency){
   }
 }
 function signed(n,currency){ return `${num(n)>0?'+':''}${fmt(n,currency)}`; }
+function fmtPoints(n,currency=''){
+  const value=Math.round(num(n));
+  const formatted=value.toLocaleString('ja-JP',{maximumFractionDigits:0,minimumFractionDigits:0});
+  return currency?`${currency} ${formatted}`:formatted;
+}
+function signedPoints(n,currency=''){
+  return `${num(n)>0?'+':''}${fmtPoints(n,currency)}`;
+}
 function pct(n){ return `${num(n).toFixed(1)}%`; }
 function venueById(id){ return state.venues.find(v=>v.id===id); }
 function sessionProfitLocal(s){ return num(s.profitLocal); }
@@ -443,7 +463,7 @@ function updateSessionPreview(){
   const c=calculateFormProfit(),fx=num(document.getElementById('sessionFx').value)||1;
   const venue=venueById(document.getElementById('sessionVenue').value),currency=venue?.currency||'LOCAL';
   const el=document.getElementById('sessionPreview');
-  el.innerHTML=`現地収支：<strong class="${c.profit>=0?'positive':'negative'}">${signed(c.profit,currency)}</strong><br>基準通貨：<strong>${signed(c.profit*fx,state.settings.baseCurrency)}</strong>`;
+  el.innerHTML=`現地収支：<strong class="${c.profit>=0?'positive':'negative'}">${signedPoints(c.profit,currency)}</strong><br>基準通貨：<strong>${signed(c.profit*fx,state.settings.baseCurrency)}</strong>`;
 }
 ['cashBuyIn','cashOut','sessionExpenses','tournamentBuyIn','tournamentReentry','tournamentPrize','sessionFx'].forEach(id=>document.getElementById(id).addEventListener('input',updateSessionPreview));
 
@@ -494,17 +514,17 @@ document.getElementById('sessionForm').addEventListener('submit',e=>{
     const v=venueById(venueId);if(v)v.chipBalance=num(v.chipBalance)+session.chipDelta;
   }
   if(editingId)state.sessions=state.sessions.map(s=>s.id===editingId?session:s);else state.sessions.push(session);
-  saveState();resetSessionForm();renderSessions();showToast(editingId?'更新しました':'保存しました');
+  saveState();resetSessionForm();renderSessions();renderHome();showToast(editingId?'更新しました':'保存しました');
 });
 
 function sessionCardHtml(s){
   const v=venueById(s.venueId),currency=v?.currency||'LOCAL';
   const title=s.type==='cash'?(s.stakes||'リング'):(s.tournamentName||'トーナメント');
-  const detail=s.type==='cash'?`${num(s.hours).toFixed(1)}h・Buy ${fmt(s.buyIn,currency)} → ${fmt(s.cashOut,currency)}`:
-    `${s.place?`${s.place}位`:'順位未入力'}${s.field?` / ${s.field}人`:''}・費用 ${fmt(s.costLocal,currency)}`;
+  const detail=s.type==='cash'?`${num(s.hours).toFixed(1)}h・Buy ${fmtPoints(s.buyIn,currency)} → ${fmtPoints(s.cashOut,currency)}`:
+    `${s.place?`${s.place}位`:'順位未入力'}${s.field?` / ${s.field}人`:''}・費用 ${fmtPoints(s.costLocal,currency)}`;
   return `<article class="log-card">
     <div class="log-top"><div><strong>${esc(title)}</strong><div class="log-meta">${esc(s.date)}・${esc(v?.name||'店舗未登録')}<br>${esc(detail)}</div></div>
-    <div class="log-profit ${s.profitLocal>=0?'positive':'negative'}">${signed(s.profitLocal,currency)}</div></div>
+    <div class="log-profit ${s.profitLocal>=0?'positive':'negative'}">${signedPoints(s.profitLocal,currency)}</div></div>
     ${s.notes?`<p class="log-note">${esc(s.notes)}</p>`:''}
     <div class="log-actions"><button class="mini-btn" data-edit-session="${s.id}">編集</button><button class="mini-btn delete" data-delete-session="${s.id}">削除</button></div>
   </article>`;
@@ -517,11 +537,19 @@ function renderSessions(){
   document.getElementById('sessionList').innerHTML=list.length?list.map(sessionCardHtml).join(''):'<p class="empty muted">まだ記録がありません。</p>';
 }
 document.getElementById('sessionListFilter').addEventListener('change',renderSessions);
-document.getElementById('sessionList').addEventListener('click',e=>{
-  const edit=e.target.closest('[data-edit-session]'),del=e.target.closest('[data-delete-session]');
-  if(edit) editSession(edit.dataset.editSession);
-  if(del) deleteSession(del.dataset.deleteSession);
-});
+function handleSessionActionClick(event){
+  const edit=event.target.closest('[data-edit-session]');
+  const del=event.target.closest('[data-delete-session]');
+  if(edit){
+    const id=edit.dataset.editSession;
+    go('sessions');
+    requestAnimationFrame(()=>editSession(id));
+    return;
+  }
+  if(del)deleteSession(del.dataset.deleteSession);
+}
+document.getElementById('sessionList').addEventListener('click',handleSessionActionClick);
+document.getElementById('recentSessions').addEventListener('click',handleSessionActionClick);
 function editSession(id){
   const s=state.sessions.find(x=>x.id===id);if(!s)return;
   openCollapsible('session-input');
@@ -549,7 +577,11 @@ function updateFxHintOnly(){
 function deleteSession(id){
   const s=state.sessions.find(x=>x.id===id);if(!s||!confirm('このセッションを削除しますか？'))return;
   if(s.reflected&&s.venueId){const v=venueById(s.venueId);if(v)v.chipBalance=num(v.chipBalance)-num(s.chipDelta);}
-  state.sessions=state.sessions.filter(x=>x.id!==id);saveState();renderSessions();showToast('削除しました');
+  state.sessions=state.sessions.filter(x=>x.id!==id);
+  saveState();
+  renderSessions();
+  renderHome();
+  showToast('削除しました');
 }
 
 
@@ -591,10 +623,10 @@ function updateChipTransactionPreview(){
   }
   const delta=type==='purchase'?amount:-amount;
   const after=num(venue.chipBalance)+delta;
-  badge.textContent=`現在 ${fmt(venue.chipBalance,venue.currency)}`;
+  badge.textContent=`現在 ${fmtPoints(venue.chipBalance,venue.currency)}`;
   preview.innerHTML=`${type==='purchase'?'購入後':'換金後'}の残高：
-    <strong class="${after>=0?'positive':'negative'}">${fmt(after,venue.currency)}</strong>
-    <br><span class="muted">${fmt(venue.chipBalance,venue.currency)} ${delta>=0?'+':'−'} ${fmt(Math.abs(delta),venue.currency)}</span>`;
+    <strong class="${after>=0?'positive':'negative'}">${fmtPoints(after,venue.currency)}</strong>
+    <br><span class="muted">${fmtPoints(venue.chipBalance,venue.currency)} ${delta>=0?'+':'−'} ${fmtPoints(Math.abs(delta),venue.currency)}</span>`;
 }
 ['chipTransactionVenue','chipTransactionType','chipTransactionAmount'].forEach(id=>{
   document.getElementById(id).addEventListener('input',updateChipTransactionPreview);
@@ -647,7 +679,7 @@ function renderChipTransactionHistory(){
           <strong>${purchase?'チップ購入':'チップ換金'}</strong>
           <div class="log-meta">${esc(t.date)}・${esc(venue?.name||'削除済み店舗')}${t.memo?`<br>${esc(t.memo)}`:''}</div>
         </div>
-        <div class="amount ${purchase?'positive':'negative'}">${signed(t.amount,currency)}</div>
+        <div class="amount ${purchase?'positive':'negative'}">${signedPoints(t.amount,currency)}</div>
       </div>
       <div class="log-actions"><button class="mini-btn delete" data-delete-chip-transaction="${t.id}">削除</button></div>
     </article>`;
@@ -694,10 +726,10 @@ function renderVenues(){
     const cashedOut=Math.abs(chipTx.filter(t=>t.amount<0).reduce((a,t)=>a+num(t.amount),0));
     return `<article class="log-card venue-card">
       <div class="log-top"><div><strong>${esc(v.name)}</strong><div class="log-meta">${esc(v.currency)}・換算 ${num(v.fxRate)} ${esc(state.settings.baseCurrency)}</div></div>
-      <div class="log-profit ${profit>=0?'positive':'negative'}">${signed(profit,v.currency)}</div></div>
-      <div class="balance">${fmt(v.chipBalance,v.currency)}</div><div class="log-meta">現在のチップ残高（約 ${fmt(v.chipBalance*v.fxRate,state.settings.baseCurrency)}）</div>
-      <div class="venue-stats"><div><strong>${sessions.length}</strong><span>セッション</span></div><div><strong>${hours?fmt(cash.reduce((a,s)=>a+sessionProfitLocal(s),0)/hours,v.currency):'—'}</strong><span>リング時給</span></div><div><strong>${sessions.filter(s=>s.type==='tournament').length}</strong><span>MTT回数</span></div></div>
-      ${chipTx.length?`<div class="chip-flow-summary"><span>購入 ${fmt(purchased,v.currency)}</span><span>換金 ${fmt(cashedOut,v.currency)}</span></div>`:''}
+      <div class="log-profit ${profit>=0?'positive':'negative'}">${signedPoints(profit,v.currency)}</div></div>
+      <div class="balance">${fmtPoints(v.chipBalance,v.currency)}</div><div class="log-meta">現在のチップ残高（約 ${fmt(v.chipBalance*v.fxRate,state.settings.baseCurrency)}）</div>
+      <div class="venue-stats"><div><strong>${sessions.length}</strong><span>セッション</span></div><div><strong>${hours?fmtPoints(cash.reduce((a,s)=>a+sessionProfitLocal(s),0)/hours,v.currency):'—'}</strong><span>リング時給</span></div><div><strong>${sessions.filter(s=>s.type==='tournament').length}</strong><span>MTT回数</span></div></div>
+      ${chipTx.length?`<div class="chip-flow-summary"><span>購入 ${fmtPoints(purchased,v.currency)}</span><span>換金 ${fmtPoints(cashedOut,v.currency)}</span></div>`:''}
       ${v.notes?`<p class="log-note">${esc(v.notes)}</p>`:''}
       <div class="log-actions"><button class="mini-btn" data-edit-venue="${v.id}">編集</button><button class="mini-btn delete" data-delete-venue="${v.id}">削除</button></div>
     </article>`;
@@ -1517,6 +1549,110 @@ document.getElementById('saveSettingsBtn').addEventListener('click',()=>{
   state.settings.lossLimit=num(document.getElementById('lossLimit').value);saveState();renderSettings();showToast('設定を保存しました');
 });
 
+
+let draggedRingStakeItem=null;
+let pointerRingStakeDrag=null;
+
+function ringStakeOrderFromDom(){
+  return [...document.querySelectorAll('#ringStakeList [data-ring-stake-item]')]
+    .map(item=>normalizeStakeValue(item.dataset.ringStakeItem))
+    .filter(Boolean);
+}
+function saveRingStakeDomOrder(showMessage=true){
+  const order=ringStakeOrderFromDom();
+  if(!order.length)return;
+  state.settings.ringStakes=order;
+  saveState();
+  renderRingStakeSettings();
+  if(showMessage)showToast('ステークスの並び順を保存しました');
+}
+function clearRingStakeDragStyles(){
+  document.querySelectorAll('#ringStakeList .ring-stake-item').forEach(item=>{
+    item.classList.remove('is-dragging','is-drag-over');
+  });
+  document.body.classList.remove('ring-stake-dragging');
+}
+function moveRingStakeItemByPointer(item,clientY){
+  const list=document.getElementById('ringStakeList');
+  const siblings=[...list.querySelectorAll('.ring-stake-item:not(.is-dragging)')];
+  const before=siblings.find(sibling=>{
+    const rect=sibling.getBoundingClientRect();
+    return clientY<rect.top+rect.height/2;
+  });
+  if(before)list.insertBefore(item,before);
+  else list.appendChild(item);
+
+  const edge=70;
+  if(clientY<edge)window.scrollBy({top:-14,behavior:'auto'});
+  else if(clientY>window.innerHeight-edge)window.scrollBy({top:14,behavior:'auto'});
+}
+function initializeRingStakeDragAndDrop(){
+  const list=document.getElementById('ringStakeList');
+  if(!list||list.dataset.dragReady==='true')return;
+  list.dataset.dragReady='true';
+
+  list.addEventListener('dragstart',event=>{
+    const item=event.target.closest('[data-ring-stake-item]');
+    if(!item)return;
+    draggedRingStakeItem=item;
+    item.classList.add('is-dragging');
+    document.body.classList.add('ring-stake-dragging');
+    if(event.dataTransfer){
+      event.dataTransfer.effectAllowed='move';
+      event.dataTransfer.setData('text/plain',item.dataset.ringStakeItem||'');
+    }
+  });
+  list.addEventListener('dragover',event=>{
+    if(!draggedRingStakeItem)return;
+    event.preventDefault();
+    moveRingStakeItemByPointer(draggedRingStakeItem,event.clientY);
+  });
+  list.addEventListener('drop',event=>{
+    if(!draggedRingStakeItem)return;
+    event.preventDefault();
+    saveRingStakeDomOrder();
+    draggedRingStakeItem=null;
+    clearRingStakeDragStyles();
+  });
+  list.addEventListener('dragend',()=>{
+    if(draggedRingStakeItem){
+      saveRingStakeDomOrder(false);
+      draggedRingStakeItem=null;
+    }
+    clearRingStakeDragStyles();
+  });
+
+  list.addEventListener('pointerdown',event=>{
+    const handle=event.target.closest('[data-drag-ring-stake]');
+    if(!handle||event.pointerType==='mouse')return;
+    const item=handle.closest('[data-ring-stake-item]');
+    if(!item)return;
+    event.preventDefault();
+    handle.setPointerCapture?.(event.pointerId);
+    pointerRingStakeDrag={pointerId:event.pointerId,handle,item,moved:false,startY:event.clientY};
+    item.classList.add('is-dragging');
+    document.body.classList.add('ring-stake-dragging');
+  });
+  list.addEventListener('pointermove',event=>{
+    if(!pointerRingStakeDrag||event.pointerId!==pointerRingStakeDrag.pointerId)return;
+    event.preventDefault();
+    if(Math.abs(event.clientY-pointerRingStakeDrag.startY)>4)pointerRingStakeDrag.moved=true;
+    moveRingStakeItemByPointer(pointerRingStakeDrag.item,event.clientY);
+  });
+  const finishPointerDrag=event=>{
+    if(!pointerRingStakeDrag||event.pointerId!==pointerRingStakeDrag.pointerId)return;
+    event.preventDefault();
+    const moved=pointerRingStakeDrag.moved;
+    pointerRingStakeDrag.handle.releasePointerCapture?.(event.pointerId);
+    pointerRingStakeDrag=null;
+    if(moved)saveRingStakeDomOrder();
+    else renderRingStakeSettings();
+    clearRingStakeDragStyles();
+  };
+  list.addEventListener('pointerup',finishPointerDrag);
+  list.addEventListener('pointercancel',finishPointerDrag);
+}
+
 document.getElementById('ringStakeForm').addEventListener('submit',event=>{
   event.preventDefault();
   const sb=num(document.getElementById('ringStakeSb').value);
@@ -1543,24 +1679,6 @@ document.getElementById('ringStakeForm').addEventListener('submit',event=>{
   showToast(`${formatStakeValue(value)} を追加しました`);
 });
 document.getElementById('ringStakeList').addEventListener('click',event=>{
-  const moveButton=event.target.closest('[data-move-ring-stake]');
-  if(moveButton){
-    const value=normalizeStakeValue(moveButton.dataset.moveRingStake);
-    const direction=Number(moveButton.dataset.direction);
-    const stakes=normalizeRingStakes(state.settings.ringStakes);
-    const currentIndex=stakes.indexOf(value);
-    const nextIndex=currentIndex+direction;
-    if(currentIndex<0||nextIndex<0||nextIndex>=stakes.length)return;
-    [stakes[currentIndex],stakes[nextIndex]]=[stakes[nextIndex],stakes[currentIndex]];
-    state.settings.ringStakes=stakes;
-    saveState();
-    renderRingStakeSettings();
-    const movedItem=document.querySelector(`[data-ring-stake-item="${CSS.escape(value)}"]`);
-    movedItem?.scrollIntoView({block:'nearest',behavior:'smooth'});
-    showToast(`${formatStakeValue(value)} を${direction<0?'上':'下'}へ移動しました`);
-    return;
-  }
-
   const deleteButton=event.target.closest('[data-delete-ring-stake]');
   if(!deleteButton)return;
   const value=normalizeStakeValue(deleteButton.dataset.deleteRingStake);

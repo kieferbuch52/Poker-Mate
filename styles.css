@@ -722,3 +722,45 @@ textarea{resize:vertical}
   .ring-stake-item{grid-template-columns:22px minmax(0,1fr)}
   .stake-item-actions{grid-column:2;justify-content:flex-end}
 }
+
+
+/* v3.6: drag-and-drop ring stake ordering */
+.ring-stake-item{
+  grid-template-columns:34px 26px minmax(0,1fr) auto;
+  transition:transform .14s ease,opacity .14s ease,background .14s ease,border-color .14s ease;
+}
+.stake-drag-handle{
+  display:grid;
+  place-items:center;
+  width:32px;
+  height:36px;
+  padding:0;
+  border:1px solid var(--line);
+  border-radius:9px;
+  color:var(--accent);
+  background:rgba(75,227,164,.06);
+  font-size:1.1rem;
+  font-weight:950;
+  cursor:grab;
+  touch-action:none;
+  user-select:none;
+  -webkit-user-select:none;
+}
+.stake-drag-handle:active{cursor:grabbing;background:rgba(75,227,164,.15)}
+.ring-stake-item.is-dragging{
+  z-index:4;
+  opacity:.72;
+  border-color:var(--accent);
+  background:rgba(75,227,164,.12);
+  box-shadow:0 12px 28px rgba(0,0,0,.32);
+  transform:scale(1.015);
+}
+.ring-stake-dragging{
+  user-select:none;
+  -webkit-user-select:none;
+}
+.ring-stake-dragging .bottom-nav{pointer-events:none}
+@media(max-width:380px){
+  .ring-stake-item{grid-template-columns:32px 22px minmax(0,1fr)}
+  .stake-item-actions{grid-column:3;justify-content:flex-end}
+}
