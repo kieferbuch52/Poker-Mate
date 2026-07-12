@@ -1,11 +1,23 @@
 'use strict';
 
-const APP_VERSION = '4.3.0';
+const APP_VERSION = '4.4.0';
 const APP_CHANGELOG = [
+  {
+    version:'4.4.0',
+    title:'PN画面圧縮とオッズ結果統一',
+    current:true,
+    changes:[
+      'パワーナンバーの条件入力5項目をコンパクトな1〜2段へ整理',
+      '自分のハンド選択を小型カード2枚の横並びへ変更',
+      'M値・必要PN・ハンドPN・判定を帯状に集約',
+      'パワーナンバー表がより早く画面へ表示されるよう余白を削減',
+      'ベットにコールとレイズにコールの結果表示を同じ構成へ統一'
+    ]
+  },
   {
     version:'4.3.0',
     title:'設定・数値入力・ツール再編',
-    current:true,
+    current:false,
     changes:[
       'リングステークス候補と基本設定を別パネルへ分離',
       '基準通貨とセッション損失上限を設定画面下部へ移動',
@@ -1304,11 +1316,34 @@ document.querySelectorAll('[data-odds-mode]').forEach(button=>{
   button.addEventListener('click',()=>setOddsMode(button.dataset.oddsMode));
 });
 
+
+function oddsResultHtml({need,call,finalPot,note=''}) {
+  return `
+    <div class="odds-result-summary">
+      <span>必要勝率</span>
+      <strong>${pct(need)}</strong>
+    </div>
+    <div class="odds-result-metrics">
+      <div><span>コール額</span><strong>${call.toLocaleString()}</strong></div>
+      <div><span>コール後ポット</span><strong>${finalPot.toLocaleString()}</strong></div>
+    </div>
+    ${note?`<p class="odds-result-note">${note}</p>`:''}`;
+}
+
 function renderOdds(){
-  const pot=num(document.getElementById('oddsPot').value),bet=num(document.getElementById('oddsBet').value),call=num(document.getElementById('oddsCall').value);
-  const finalPot=pot+bet+call,need=finalPot?call/finalPot*100:0;
-  const bluff=pot+bet?bet/(pot+bet)*100:0,mdf=pot+bet?pot/(pot+bet)*100:0;
-  document.getElementById('oddsResult').innerHTML=`必要勝率 <strong>${pct(need)}</strong><br><span class="muted">最終ポット ${finalPot.toLocaleString()} に対して ${call.toLocaleString()} をコール。相手がこのサイズをブラフする損益分岐点は ${pct(bluff)}、理論上のMDFは ${pct(mdf)}。</span>`;
+  const pot=Math.max(0,num(document.getElementById('oddsPot').value));
+  const bet=Math.max(0,num(document.getElementById('oddsBet').value));
+  const call=Math.max(0,num(document.getElementById('oddsCall').value));
+  const finalPot=pot+bet+call;
+  const need=finalPot?call/finalPot*100:0;
+  const bluff=pot+bet?bet/(pot+bet)*100:0;
+  const mdf=pot+bet?pot/(pot+bet)*100:0;
+  document.getElementById('oddsResult').innerHTML=oddsResultHtml({
+    need,
+    call,
+    finalPot,
+    note:`相手のブラフ損益分岐点 ${pct(bluff)}・MDF ${pct(mdf)}`
+  });
 }
 ['oddsPot','oddsBet','oddsCall'].forEach(id=>document.getElementById(id).addEventListener('input',renderOdds));
 document.querySelectorAll('[data-pot-fraction]').forEach(b=>b.addEventListener('click',()=>{
@@ -1327,7 +1362,12 @@ function renderRaiseOdds(){
   const need=finalPot?call/finalPot*100:0;
   const valid=raiseTo>=ownBet;
   document.getElementById('raiseResult').innerHTML=valid
-    ?`追加コール額 <strong>${call.toLocaleString()}</strong>・必要勝率 <strong>${pct(need)}</strong><br><span class="muted">コール後の最終ポットは ${finalPot.toLocaleString()}。</span>`
+    ?oddsResultHtml({
+      need,
+      call,
+      finalPot,
+      note:`自分の既投入 ${ownBet.toLocaleString()}・相手のレイズ合計 ${raiseTo.toLocaleString()}`
+    })
     :'<span class="negative">レイズ合計額は、自分のベット額以上にしてください。</span>';
   const multiples=[2,2.5,3,3.5,4,5];
   document.getElementById('raiseOddsTable').innerHTML=
@@ -1699,20 +1739,21 @@ function renderPower(){
   const required=m*behind;
   const selectedHand=canonicalHandFromCards(pnCards);
   const selectedPn=pnForHand(selectedHand);
+  const selectedOk=Boolean(selectedHand)&&selectedPn>=required;
 
+  document.getElementById('pnMValue').textContent=m.toFixed(2);
   document.getElementById('pnThresholdLabel').textContent=required.toFixed(1);
+  document.getElementById('pnHandValue').textContent=selectedHand?pnDisplayValue(selectedPn):'—';
+  document.getElementById('pnDecision').textContent=selectedHand
+    ?(selectedOk?'候補':'見送り')
+    :'未選択';
+  document.getElementById('pnDecision').className=selectedHand
+    ?(selectedOk?'positive':'negative')
+    :'';
 
-  if(!selectedHand){
-    document.getElementById('pnResult').innerHTML=
-      `M値 <strong>${m.toFixed(2)}</strong>・必要PN <strong>${required.toFixed(1)}</strong><br>`+
-      `<span class="muted">自分のハンドを2枚選択してください。白い枠のハンドが必要PN以上です。</span>`;
-  }else{
-    const ok=selectedPn>=required;
-    document.getElementById('pnResult').innerHTML=
-      `M値 <strong>${m.toFixed(2)}</strong>・必要PN <strong>${required.toFixed(1)}</strong><br>`+
-      `${selectedHand} のPNは <strong>${pnDisplayValue(selectedPn)}</strong>：`+
-      `<span class="${ok?'positive':'negative'}">${ok?'必要PNを満たしています':'必要PNを下回っています'}</span>`;
-  }
+  document.getElementById('pnResult').textContent=selectedHand
+    ?`${selectedHand}：${selectedOk?'必要PN以上':'必要PN未満'}`
+    :'白枠のハンドが必要PN以上です。';
 
   let qualifiedCount=0;
   const selected=canonicalHandFromCards(pnCards);
@@ -1736,7 +1777,7 @@ function renderPower(){
   document.getElementById('pnQualifiedCount').textContent=`${qualifiedCount} / 169`;
   document.getElementById('pnGrid').innerHTML=cells.join('');
 }
-['pnStack' ,'pnSb','pnBb','pnAnteTotal','pnBehind'].forEach(id=>document.getElementById(id).addEventListener('input',renderPower));
+['pnStack'  ,'pnSb','pnBb','pnAnteTotal','pnBehind'].forEach(id=>document.getElementById(id).addEventListener('input',renderPower));
 document.getElementById('pnGrid').addEventListener('click',e=>{
   const b=e.target.closest('[data-pn-hand]');if(!b)return;selectedPnHand=b.dataset.pnHand;pnCards=representativeCardsForHand(selectedPnHand);renderVisualCards();renderPower();
 });

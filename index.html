@@ -11,7 +11,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./styles.css?v=4.3.0">
+  <link rel="stylesheet" href="./styles.css?v=4.4.0">
 </head>
 <body>
   <header class="topbar">
@@ -21,7 +21,7 @@
     </div>
     <div class="top-actions">
       <button id="globalQuickButton" class="top-quick-button" type="button" aria-haspopup="dialog" aria-controls="quickActionSheet" aria-label="クイック操作を開く">＋</button>
-      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v4.3.0</button>
+      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v4.4.0</button>
       <button id="installBtn" class="ghost hidden">ホーム画面に追加</button>
     </div>
   </header>
@@ -594,49 +594,71 @@
       </section>
 
       <section id="powerTool" class="panel hidden">
-        <h3>トーナメント・パワーナンバー</h3>
-        <div class="grid two">
-          <label>スタック
+        <div class="section-head pn-tool-heading">
+          <div>
+            <p class="eyebrow">POWER NUMBER</p>
+            <h3>トーナメント・パワーナンバー</h3>
+          </div>
+          <span class="summary-badge">Push目安</span>
+        </div>
+
+        <div class="pn-compact-controls" aria-label="パワーナンバー条件">
+          <label>
+            <span>スタック</span>
             <input id="pnStack" type="number" inputmode="decimal" min="0" value="16000">
           </label>
-          <label>SB / BB
-            <div class="inline-inputs">
-              <input id="pnSb" type="number" inputmode="decimal" min="0" value="1000" aria-label="SB">
-              <input id="pnBb" type="number" inputmode="decimal" min="0" value="2000" aria-label="BB">
-            </div>
+          <label>
+            <span>SB</span>
+            <input id="pnSb" type="number" inputmode="decimal" min="0" value="1000" aria-label="SB">
           </label>
-        </div>
-        <div class="grid two">
-          <label>アンティ合計（1周あたり）
+          <label>
+            <span>BB</span>
+            <input id="pnBb" type="number" inputmode="decimal" min="0" value="2000" aria-label="BB">
+          </label>
+          <label>
+            <span>アンティ計</span>
             <input id="pnAnteTotal" type="number" inputmode="decimal" min="0" value="2000">
           </label>
-          <label>後ろに残る人数
+          <label>
+            <span>後ろ人数</span>
             <input id="pnBehind" type="number" inputmode="numeric" min="1" max="9" value="3">
           </label>
         </div>
-        <div class="pn-picker-wrap visual-picker-wrap">
-          <div class="section-head">
-            <strong>自分のハンド</strong>
-            <span id="pnSelectedLabel" class="selected-hand-label">ATo</span>
+
+        <div class="pn-hand-compact">
+          <div class="pn-hand-compact-label">
+            <span>自分のハンド</span>
+            <strong id="pnSelectedLabel">未選択</strong>
           </div>
-          <p class="hint">カードをタップし、下から実際の2枚を選んでください。</p>
           <div class="visual-card-row pn-hole-cards">
             <button type="button" class="playing-card empty" data-card-picker="pn" data-card-zone="pn" data-card-index="0" aria-label="パワーナンバーの1枚目">?</button>
             <button type="button" class="playing-card empty" data-card-picker="pn" data-card-zone="pn" data-card-index="1" aria-label="パワーナンバーの2枚目">?</button>
           </div>
-          <button id="clearPnCardsBtn" class="ghost compact-button" type="button">ハンドをクリア</button>
+          <button id="clearPnCardsBtn" class="pn-clear-button" type="button" aria-label="選択したハンドをクリア">×</button>
         </div>
-        <div id="pnResult" class="tool-result"></div>
 
-        <div class="pn-threshold-panel">
+        <div class="pn-summary-strip">
           <div>
-            <span>必要PNライン</span>
+            <span>M値</span>
+            <strong id="pnMValue">—</strong>
+          </div>
+          <div>
+            <span>必要PN</span>
             <strong id="pnThresholdLabel">—</strong>
           </div>
           <div>
-            <span>条件を満たすハンド</span>
-            <strong id="pnQualifiedCount">—</strong>
+            <span>ハンドPN</span>
+            <strong id="pnHandValue">—</strong>
           </div>
+          <div>
+            <span>判定</span>
+            <strong id="pnDecision">—</strong>
+          </div>
+        </div>
+
+        <div class="pn-table-meta">
+          <span id="pnResult">白枠のハンドが必要PN以上です。</span>
+          <strong id="pnQualifiedCount">—</strong>
         </div>
 
         <div class="range-legend pn-tier-legend">
@@ -649,7 +671,7 @@
         </div>
 
         <div id="pnGrid" class="hand-grid power-grid range-fit-grid" aria-label="パワーナンバー表"></div>
-        <p class="hint">目安：必要PN＝M値×後ろの人数、M値＝スタック÷（SB＋BB＋アンティ合計）。先に誰も参加していない場面向けの簡易判断です。バブル・ファイナル・サテライトなどICMが強い局面では、そのまま使わないでください。</p>
+        <p class="hint pn-bottom-hint">必要PN＝M値×後ろの人数、M値＝スタック÷（SB＋BB＋アンティ合計）。ICMが強い局面では調整してください。</p>
       </section>
     </section>
 
@@ -812,7 +834,7 @@
         <button id="saveSettingsBtn" class="secondary" type="button">基本設定を保存</button>
         <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">
           <span>アプリバージョン</span>
-          <strong id="settingsVersion">v4.3.0 <span aria-hidden="true">›</span></strong>
+          <strong id="settingsVersion">v4.4.0 <span aria-hidden="true">›</span></strong>
         </button>
       </section>
 
@@ -875,7 +897,7 @@
     <div class="current-version-card">
       <div>
         <span class="current-version-label">現在のバージョン</span>
-        <strong id="currentVersionInModal">v4.3.0</strong>
+        <strong id="currentVersionInModal">v4.4.0</strong>
       </div>
       <span class="up-to-date-badge">最新版</span>
     </div>
@@ -952,6 +974,6 @@
   </nav>
 
   <div id="toast" class="toast" role="status"></div>
-  <script src="./app.js?v=4.3.0"></script>
+  <script src="./app.js?v=4.4.0"></script>
 </body>
 </html>
