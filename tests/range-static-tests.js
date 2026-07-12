@@ -3,13 +3,30 @@ const fs=require('fs');
 const path=require('path');
 const app=fs.readFileSync(path.join(__dirname,'..','app.js'),'utf8');
 const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
-const stacks=['100','80','60','40','25','15','10'];
-for(const stack of stacks){
-  if(!html.includes(`data-tournament-stack="${stack}"`))throw new Error(`missing stack button ${stack}`);
-  if(!app.includes(`tournamentRfiRanges['${stack}']`)&&!app.includes(`'${stack}': {`))throw new Error(`missing RFI range ${stack}`);
-  if(!app.includes(`tournamentBbDefenseRanges['${stack}']`)&&!app.includes(`'${stack}': {`))throw new Error(`missing defense range ${stack}`);
+
+const tournamentStacks=['100','80','60','40','25','15','10'];
+for(const stack of tournamentStacks){
+  if(!html.includes(`data-tournament-stack="${stack}"`))throw new Error(`missing tournament stack button ${stack}`);
+  if(!app.includes(`tournamentRfiRanges['${stack}']`)&&!app.includes(`'${stack}': {`))throw new Error(`missing tournament RFI range ${stack}`);
+  if(!app.includes(`tournamentBbDefenseRanges['${stack}']`)&&!app.includes(`'${stack}': {`))throw new Error(`missing tournament defense range ${stack}`);
 }
+
+const headsUpStacks=['40','30','25','20','15','10','5'];
+for(const stack of headsUpStacks){
+  if(!html.includes(`data-headsup-stack="${stack}"`))throw new Error(`missing heads-up stack button ${stack}`);
+  if(!app.includes(`'${stack}':{BTN:`))throw new Error(`missing heads-up RFI range ${stack}`);
+  if(!app.includes(`'${stack}':headsUpDefense(`))throw new Error(`missing heads-up defense range ${stack}`);
+}
+
+for(const removed of ['100','80','60']){
+  if(html.includes(`data-headsup-stack="${removed}"`))throw new Error(`deep heads-up stack should be removed: ${removed}`);
+}
+
 if(!html.includes('data-range-game="headsup"'))throw new Error('missing heads-up selector');
-if(!app.includes('const headsUpRfiRanges'))throw new Error('missing heads-up RFI data');
-if(!app.includes('const headsUpBbDefenseRanges'))throw new Error('missing heads-up defense data');
+if(!html.includes('id="headsUpStackSelector"'))throw new Error('missing separate heads-up stack selector');
+if(!app.includes("headsUpStack:'20'"))throw new Error('missing 20BB heads-up default');
+if(!app.includes('let currentHeadsUpStack'))throw new Error('missing independent heads-up state');
+if(!app.includes('headsUpRfiRanges[currentHeadsUpStack]')&&!app.includes('headsUpRfiRanges[stack]'))throw new Error('heads-up RFI not stack-aware');
+if(!app.includes('headsUpBbDefenseRanges[currentHeadsUpStack]')&&!app.includes('headsUpBbDefenseRanges[stack]'))throw new Error('heads-up defense not stack-aware');
+
 console.log('Range static tests passed');

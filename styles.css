@@ -1698,3 +1698,26 @@ main{width:min(860px,100%);padding:14px 14px 20px}
   .range-game-tabs .segment{font-size:.58rem}
   .tournament-stack-tabs .segment{font-size:.53rem}
 }
+
+
+/* v6.1.1: effective-stack selector is shared by tournament and heads-up */
+.range-selector-label{white-space:nowrap}
+
+
+/* v6.1.2: short-stack-focused heads-up depths */
+.headsup-stack-tabs{
+  grid-template-columns:repeat(7,minmax(0,1fr));
+}
+.headsup-stack-tabs .segment{
+  min-width:0;
+  padding-left:3px;
+  padding-right:3px;
+  font-size:.64rem;
+}
+@media(max-width:430px){
+  .headsup-stack-tabs{gap:3px;padding:4px}
+  .headsup-stack-tabs .segment{padding:8px 1px;font-size:.58rem}
+}
+@media(max-width:350px){
+  .headsup-stack-tabs .segment{font-size:.53rem}
+}
