@@ -11,7 +11,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./styles.css?v=4.0.0">
+  <link rel="stylesheet" href="./styles.css?v=4.2.0">
 </head>
 <body>
   <header class="topbar">
@@ -21,7 +21,7 @@
     </div>
     <div class="top-actions">
       <button id="globalQuickButton" class="top-quick-button" type="button" aria-haspopup="dialog" aria-controls="quickActionSheet" aria-label="クイック操作を開く">＋</button>
-      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v4.0.0</button>
+      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v4.2.0</button>
       <button id="installBtn" class="ghost hidden">ホーム画面に追加</button>
     </div>
   </header>
@@ -346,12 +346,38 @@
         </div>
       </div>
 
-      <div class="segmented two">
-        <button class="segment active" data-range-mode="rfi">オープンレンジ</button>
-        <button class="segment" data-range-mode="bb">BBディフェンス</button>
-      </div>
+      <section class="range-selector-panel">
+        <div class="range-selector-block">
+          <span class="range-selector-label">ゲーム形式</span>
+          <div class="segmented two range-game-tabs">
+            <button class="segment active" data-range-game="ring" type="button">リング</button>
+            <button class="segment" data-range-game="tournament" type="button">トーナメント</button>
+          </div>
+        </div>
+
+        <div id="tournamentStackSelector" class="range-selector-block hidden">
+          <span class="range-selector-label">有効スタック</span>
+          <div class="segmented three tournament-stack-tabs">
+            <button class="segment" data-tournament-stack="40" type="button">40BB</button>
+            <button class="segment active" data-tournament-stack="25" type="button">25BB</button>
+            <button class="segment" data-tournament-stack="15" type="button">15BB</button>
+          </div>
+        </div>
+
+        <div class="range-selector-block">
+          <span class="range-selector-label">確認する場面</span>
+          <div class="segmented two">
+            <button class="segment active" data-range-mode="rfi" type="button">オープンレンジ</button>
+            <button class="segment" data-range-mode="bb" type="button">BBディフェンス</button>
+          </div>
+        </div>
+      </section>
 
       <section class="panel">
+        <div class="range-context-bar">
+          <span id="rangeContextBadge" class="range-context-badge">リング・100BB</span>
+          <small id="rangeContextDescription">6-maxの標準的な学習用レンジ</small>
+        </div>
         <div class="segmented five" id="rangePositionTabs">
           <button class="segment active" data-position="UTG">UTG</button>
           <button class="segment" data-position="HJ">HJ</button>
@@ -447,7 +473,10 @@
         <div class="section-head">
           <div>
             <p class="eyebrow">EQUITY CALCULATOR</p>
-            <h3>ハンド勝率計算</h3>
+            <div class="equity-title-row">
+              <h3>ハンド勝率計算</h3>
+              <span class="exact-calc-badge">完全計算</span>
+            </div>
           </div>
           <button id="resetEquityBtn" class="ghost compact-button" type="button">クリア</button>
         </div>
@@ -496,11 +525,23 @@
         </article>
 
         <div class="equity-actions">
-          <button id="calculateEquityBtn" class="primary" type="button">勝率を計算</button>
+          <button id="calculateEquityBtn" class="primary" type="button">完全計算する</button>
           <button id="randomVillainBtn" class="secondary" type="button">相手をランダムに戻す</button>
         </div>
+
+        <div id="equityProgressWrap" class="equity-progress-wrap hidden">
+          <div class="equity-progress-head">
+            <span id="equityProgressText">全組み合わせを確認しています</span>
+            <strong id="equityProgressPercent">0%</strong>
+          </div>
+          <div class="equity-progress-track">
+            <div id="equityProgressBar" class="equity-progress-bar"></div>
+          </div>
+          <button id="cancelEquityBtn" class="ghost compact-button" type="button">計算を中止</button>
+        </div>
+
         <div id="equityResult" class="result-box">カード枠をタップして、自分のハンドを選択してください。</div>
-        <p id="equityMethod" class="hint">ボードは未入力でも計算できます。相手を未入力にするとランダムハンドとして計算します。</p>
+        <p id="equityMethod" class="hint">乱数は使わず、残りカードの全組み合わせを完全列挙します。相手がランダムでもフロップ以降は正確に計算できます。</p>
       </section>
 
       <section id="drawTool" class="panel hidden">
@@ -568,11 +609,27 @@
           <button id="clearPnCardsBtn" class="ghost compact-button" type="button">ハンドをクリア</button>
         </div>
         <div id="pnResult" class="tool-result"></div>
-        <div class="range-legend">
-          <span><i class="dot pn-high"></i>高い</span>
-          <span><i class="dot pn-mid"></i>中間</span>
-          <span><i class="dot pn-low"></i>低い</span>
+
+        <div class="pn-threshold-panel">
+          <div>
+            <span>必要PNライン</span>
+            <strong id="pnThresholdLabel">—</strong>
+          </div>
+          <div>
+            <span>条件を満たすハンド</span>
+            <strong id="pnQualifiedCount">—</strong>
+          </div>
         </div>
+
+        <div class="range-legend pn-tier-legend">
+          <span><i class="dot pn-tier-max-dot"></i>75+ / all</span>
+          <span><i class="dot pn-tier-4-dot"></i>50–74</span>
+          <span><i class="dot pn-tier-3-dot"></i>30–49</span>
+          <span><i class="dot pn-tier-2-dot"></i>15–29</span>
+          <span><i class="dot pn-tier-1-dot"></i>1–14</span>
+          <span><i class="pn-qualified-sample"></i>必要PN以上</span>
+        </div>
+
         <div id="pnGrid" class="hand-grid power-grid range-fit-grid" aria-label="パワーナンバー表"></div>
         <p class="hint">目安：必要PN＝M値×後ろの人数、M値＝スタック÷（SB＋BB＋アンティ合計）。先に誰も参加していない場面向けの簡易判断です。バブル・ファイナル・サテライトなどICMが強い局面では、そのまま使わないでください。</p>
       </section>
@@ -728,7 +785,7 @@
         </div>
         <div id="ringStakeList" class="ring-stake-list"></div>
 
-        <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal"><span>アプリバージョン</span><strong id="settingsVersion">v4.0.0 <span aria-hidden="true">›</span></strong></button>
+        <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal"><span>アプリバージョン</span><strong id="settingsVersion">v4.2.0 <span aria-hidden="true">›</span></strong></button>
         <button id="saveSettingsBtn" class="secondary" type="button">設定を保存</button>
       </section>
 
@@ -791,7 +848,7 @@
     <div class="current-version-card">
       <div>
         <span class="current-version-label">現在のバージョン</span>
-        <strong id="currentVersionInModal">v4.0.0</strong>
+        <strong id="currentVersionInModal">v4.2.0</strong>
       </div>
       <span class="up-to-date-badge">最新版</span>
     </div>
@@ -868,6 +925,6 @@
   </nav>
 
   <div id="toast" class="toast" role="status"></div>
-  <script src="./app.js?v=4.0.0"></script>
+  <script src="./app.js?v=4.2.0"></script>
 </body>
 </html>

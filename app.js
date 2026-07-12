@@ -1,11 +1,35 @@
 'use strict';
 
-const APP_VERSION = '4.0.0';
+const APP_VERSION = '4.2.0';
 const APP_CHANGELOG = [
+  {
+    version:'4.2.0',
+    title:'完全勝率計算とPN可視化',
+    current:true,
+    changes:[
+      '勝率計算からモンテカルロ法を廃止し、残りカードの全組み合わせを完全列挙',
+      '重い計算をWeb Workerへ分離し、進捗表示と中止ボタンを追加',
+      '勝ち・引き分け・負けの正確な組み合わせ数を表示',
+      'パワーナンバー表を5段階の色で表示',
+      '必要PN以上のハンドを白枠で強調し、該当ハンド数を表示'
+    ]
+  },
+  {
+    version:'4.1.0',
+    title:'リング・トーナメントレンジ',
+    current:false,
+    changes:[
+      'レンジ画面にリング／トーナメント切り替えを追加',
+      'トーナメントで40BB・25BB・15BBの有効スタックを選択可能に変更',
+      '各スタックのRFIレンジとBBディフェンスレンジを追加',
+      '選択したゲーム形式・スタック・場面・ポジションを端末に保存',
+      '15BBのBBディフェンスは3ベット表示をオールイン候補として表示'
+    ]
+  },
   {
     version:'4.0.0',
     title:'UI・利用動線の全面改修',
-    current:true,
+    current:false,
     changes:[
       'ホームをダッシュボード化し、クイック操作・資金・今月収支・チップ総額を集約',
       'よく使う操作へどの画面からでも移動できるクイックボタンを追加',
@@ -168,6 +192,85 @@ const ranges = {
 };
 
 
+function adjustedRange(base,add=[],remove=[]){
+  const result=new Set(base||[]);
+  add.forEach(hand=>result.add(hand));
+  remove.forEach(hand=>result.delete(hand));
+  return result;
+}
+
+const tournamentRfiRanges = {
+  '40': {
+    UTG:adjustedRange(ranges.UTG,
+      ['44','A4s','A5s','K9s','Q9s','J9s','T8s','87s','76s']),
+    HJ:adjustedRange(ranges.HJ,
+      ['33','A2s','A3s','A4s','K8s','Q8s','J8s','97s','76s','65s']),
+    CO:adjustedRange(ranges.CO,
+      ['A2o','A3o','A4o','A5o','A6o','A7o','K5s','K6s','Q7s','J7s','T7s','96s','86s','75s','64s','53s','43s']),
+    BTN:adjustedRange(ranges.BTN,
+      ['K2o','K3o','K4o','K5o','K6o','Q7o','Q8o','J8o','T8o','95s','85s','84s','74s','64s','53s','43s','32s']),
+    SB:adjustedRange(ranges.SB,
+      ['K2o','K3o','K4o','K5o','K6o','K7o','Q7o','Q8o','J8o','T8o','98o','87o','76o','65o','43s','32s'])
+  },
+  '25': {
+    UTG:adjustedRange(ranges.UTG,
+      ['22','33','44','A2s','A3s','A4s','A5s','A6s','A7s','ATo','K9s','Q9s','J9s','T8s'],
+      ['76s']),
+    HJ:adjustedRange(ranges.HJ,
+      ['22','33','A2s','A3s','A4s','A8o','A9o','K8s','Q8s','J8s','T8s','97s','76s','65s'],
+      ['54s']),
+    CO:adjustedRange(ranges.CO,
+      ['A2o','A3o','A4o','A5o','A6o','A7o','K6s','K9o','Q7s','Q9o','J7s','J9o','T7s','T9o','96s','86s','75s','64s','53s'],
+      ['54s']),
+    BTN:adjustedRange(ranges.BTN,
+      ['K2o','K3o','K4o','K5o','K6o','Q7o','Q8o','J8o','T8o','95s','85s','84s','74s','64s','53s','43s','32s']),
+    SB:adjustedRange(ranges.SB,
+      ['K2o','K3o','K4o','K5o','K6o','K7o','Q7o','Q8o','J8o','T8o','98o','87o','76o','65o','54o','43s','32s'])
+  },
+  '15': {
+    UTG:new Set([
+      '22','33','44','55','66','77','88','99','TT','JJ','QQ','KK','AA',
+      'A2s','A3s','A4s','A5s','A6s','A7s','A8s','A9s','ATs','AJs','AQs','AKs',
+      'A9o','ATo','AJo','AQo','AKo','KTs','KJs','KQs','KQo','QTs','QJs','JTs','T9s'
+    ]),
+    HJ:new Set([
+      '22','33','44','55','66','77','88','99','TT','JJ','QQ','KK','AA',
+      'A2s','A3s','A4s','A5s','A6s','A7s','A8s','A9s','ATs','AJs','AQs','AKs',
+      'A8o','A9o','ATo','AJo','AQo','AKo','K9s','KTs','KJs','KQs','KJo','KQo',
+      'QTs','QJs','QJo','J9s','JTs','T9s','98s'
+    ]),
+    CO:new Set([
+      '22','33','44','55','66','77','88','99','TT','JJ','QQ','KK','AA',
+      'A2s','A3s','A4s','A5s','A6s','A7s','A8s','A9s','ATs','AJs','AQs','AKs',
+      'A5o','A6o','A7o','A8o','A9o','ATo','AJo','AQo','AKo',
+      'K7s','K8s','K9s','KTs','KJs','KQs','KTo','KJo','KQo',
+      'Q8s','Q9s','QTs','QJs','QTo','QJo','J8s','J9s','JTs','JTo',
+      'T8s','T9s','97s','98s','87s','76s','65s'
+    ]),
+    BTN:new Set([
+      '22','33','44','55','66','77','88','99','TT','JJ','QQ','KK','AA',
+      'A2s','A3s','A4s','A5s','A6s','A7s','A8s','A9s','ATs','AJs','AQs','AKs',
+      'A2o','A3o','A4o','A5o','A6o','A7o','A8o','A9o','ATo','AJo','AQo','AKo',
+      'K2s','K3s','K4s','K5s','K6s','K7s','K8s','K9s','KTs','KJs','KQs',
+      'K7o','K8o','K9o','KTo','KJo','KQo',
+      'Q5s','Q6s','Q7s','Q8s','Q9s','QTs','QJs','Q9o','QTo','QJo',
+      'J7s','J8s','J9s','JTs','J9o','JTo','T7s','T8s','T9s','T9o',
+      '97s','98s','87s','76s','65s','54s'
+    ]),
+    SB:new Set([
+      '22','33','44','55','66','77','88','99','TT','JJ','QQ','KK','AA',
+      'A2s','A3s','A4s','A5s','A6s','A7s','A8s','A9s','ATs','AJs','AQs','AKs',
+      'A2o','A3o','A4o','A5o','A6o','A7o','A8o','A9o','ATo','AJo','AQo','AKo',
+      'K2s','K3s','K4s','K5s','K6s','K7s','K8s','K9s','KTs','KJs','KQs',
+      'K5o','K6o','K7o','K8o','K9o','KTo','KJo','KQo',
+      'Q5s','Q6s','Q7s','Q8s','Q9s','QTs','QJs','Q8o','Q9o','QTo','QJo',
+      'J7s','J8s','J9s','JTs','J8o','J9o','JTo',
+      'T7s','T8s','T9s','T8o','T9o','97s','98s','87s','76s','65s','54s','43s'
+    ])
+  }
+};
+
+
 const bbDefenseRanges = {
   UTG: {
     threebet:new Set(['QQ','KK','AA','AKs','AKo','A5s']),
@@ -191,6 +294,76 @@ const bbDefenseRanges = {
   }
 };
 
+const tournamentBbDefenseRanges = {
+  '40': {
+    UTG:{
+      threebet:adjustedRange(bbDefenseRanges.UTG.threebet,['JJ','AQs','AQo','A4s']),
+      call:adjustedRange(bbDefenseRanges.UTG.call,['K8s','Q8s','J8s','T8s','97s'],['65s'])
+    },
+    HJ:{
+      threebet:adjustedRange(bbDefenseRanges.HJ.threebet,['TT','AQo','A3s']),
+      call:adjustedRange(bbDefenseRanges.HJ.call,['A9o','K7s','Q7s','T7s'],['54s'])
+    },
+    CO:{
+      threebet:adjustedRange(bbDefenseRanges.CO.threebet,['99','ATs','AJo','KJs']),
+      call:adjustedRange(bbDefenseRanges.CO.call,['A7o','K9o','Q9o','J9o','T9o','74s'],['43s'])
+    },
+    BTN:{
+      threebet:adjustedRange(bbDefenseRanges.BTN.threebet,['88','A9s','ATo','KTs','QTs']),
+      call:adjustedRange(bbDefenseRanges.BTN.call,['K6o','Q8o','J8o','T8o','76o','65s','54s'],[])
+    },
+    SB:{
+      threebet:adjustedRange(bbDefenseRanges.SB.threebet,['77','A8s','A9o','K9s','QTs']),
+      call:adjustedRange(bbDefenseRanges.SB.call,['K4o','Q7o','J7o','T7o','97o','76o','65o'],[])
+    }
+  },
+  '25': {
+    UTG:{
+      threebet:new Set(['88','99','TT','JJ','QQ','KK','AA','AJs','AQs','AKs','AQo','AKo','A4s','A5s','KQs']),
+      call:new Set(['22','33','44','55','66','77','A2s','A3s','A6s','A7s','A8s','A9s','ATs','AJo','K9s','KTs','KJs','Q9s','QTs','QJs','J9s','JTs','T9s','98s'])
+    },
+    HJ:{
+      threebet:new Set(['77','88','99','TT','JJ','QQ','KK','AA','ATs','AJs','AQs','AKs','AJo','AQo','AKo','A4s','A5s','KQs']),
+      call:new Set(['22','33','44','55','66','A2s','A3s','A6s','A7s','A8s','A9s','A9o','ATo','K8s','K9s','KTs','KJs','KJo','Q8s','Q9s','QTs','QJs','J8s','J9s','JTs','T8s','T9s','98s','87s'])
+    },
+    CO:{
+      threebet:new Set(['66','77','88','99','TT','JJ','QQ','KK','AA','A9s','ATs','AJs','AQs','AKs','ATo','AJo','AQo','AKo','A2s','A3s','A4s','A5s','KTs','KJs','KQs','KQo','QJs']),
+      call:new Set(['22','33','44','55','A6s','A7s','A8s','A7o','A8o','A9o','K7s','K8s','K9s','KTo','KJo','Q7s','Q8s','Q9s','QTs','QJo','J7s','J8s','J9s','JTs','JTo','T7s','T8s','T9s','97s','98s','87s','76s'])
+    },
+    BTN:{
+      threebet:new Set(['55','66','77','88','99','TT','JJ','QQ','KK','AA','A7s','A8s','A9s','ATs','AJs','AQs','AKs','A9o','ATo','AJo','AQo','AKo','A2s','A3s','A4s','A5s','K9s','KTs','KJs','KQs','KJo','KQo','QTs','QJs','JTs']),
+      call:new Set(['22','33','44','A6s','A2o','A3o','A4o','A5o','A6o','A7o','A8o','K2s','K3s','K4s','K5s','K6s','K7s','K8s','K7o','K8o','K9o','KTo','Q5s','Q6s','Q7s','Q8s','Q9s','Q9o','QTo','QJo','J6s','J7s','J8s','J9s','J9o','JTo','T6s','T7s','T8s','T9s','T9o','97s','98s','87s','76s','65s'])
+    },
+    SB:{
+      threebet:new Set(['44','55','66','77','88','99','TT','JJ','QQ','KK','AA','A5s','A6s','A7s','A8s','A9s','ATs','AJs','AQs','AKs','A8o','A9o','ATo','AJo','AQo','AKo','K9s','KTs','KJs','KQs','KTo','KJo','KQo','QTs','QJs','JTs']),
+      call:new Set(['22','33','A2s','A3s','A4s','A2o','A3o','A4o','A5o','A6o','A7o','K2s','K3s','K4s','K5s','K6s','K7s','K8s','K5o','K6o','K7o','K8o','K9o','Q4s','Q5s','Q6s','Q7s','Q8s','Q9s','Q8o','Q9o','QTo','J5s','J6s','J7s','J8s','J9s','J8o','J9o','JTo','T6s','T7s','T8s','T9s','T8o','T9o','97s','98s','87s','76s','65s','54s'])
+    }
+  },
+  '15': {
+    UTG:{
+      threebet:new Set(['77','88','99','TT','JJ','QQ','KK','AA','AJs','AQs','AKs','AQo','AKo','A4s','A5s','KQs']),
+      call:new Set(['22','33','44','55','66','A2s','A3s','A6s','A7s','A8s','A9s','ATs','AJo','KTs','KJs','QTs','QJs','JTs','T9s'])
+    },
+    HJ:{
+      threebet:new Set(['66','77','88','99','TT','JJ','QQ','KK','AA','ATs','AJs','AQs','AKs','AJo','AQo','AKo','A4s','A5s','KQs']),
+      call:new Set(['22','33','44','55','A2s','A3s','A6s','A7s','A8s','A9s','A9o','ATo','K9s','KTs','KJs','KJo','Q9s','QTs','QJs','J9s','JTs','T9s','98s'])
+    },
+    CO:{
+      threebet:new Set(['55','66','77','88','99','TT','JJ','QQ','KK','AA','A8s','A9s','ATs','AJs','AQs','AKs','ATo','AJo','AQo','AKo','A2s','A3s','A4s','A5s','KTs','KJs','KQs','KQo','QJs']),
+      call:new Set(['22','33','44','A6s','A7s','A7o','A8o','A9o','K8s','K9s','KTo','KJo','Q8s','Q9s','QTs','QJo','J8s','J9s','JTs','JTo','T8s','T9s','98s','87s'])
+    },
+    BTN:{
+      threebet:new Set(['44','55','66','77','88','99','TT','JJ','QQ','KK','AA','A5s','A6s','A7s','A8s','A9s','ATs','AJs','AQs','AKs','A8o','A9o','ATo','AJo','AQo','AKo','K9s','KTs','KJs','KQs','KTo','KJo','KQo','QTs','QJs','QJo','JTs']),
+      call:new Set(['22','33','A2s','A3s','A4s','A2o','A3o','A4o','A5o','A6o','A7o','K5s','K6s','K7s','K8s','K7o','K8o','K9o','Q7s','Q8s','Q9s','Q9o','QTo','J7s','J8s','J9s','J9o','JTo','T7s','T8s','T9s','T9o','98s','87s','76s'])
+    },
+    SB:{
+      threebet:new Set(['22','33','44','55','66','77','88','99','TT','JJ','QQ','KK','AA','A2s','A3s','A4s','A5s','A6s','A7s','A8s','A9s','ATs','AJs','AQs','AKs','A2o','A3o','A4o','A5o','A6o','A7o','A8o','A9o','ATo','AJo','AQo','AKo','K7s','K8s','K9s','KTs','KJs','KQs','K9o','KTo','KJo','KQo','Q9s','QTs','QJs','QTo','QJo','JTs','T9s']),
+      call:new Set(['K2s','K3s','K4s','K5s','K6s','K5o','K6o','K7o','K8o','Q5s','Q6s','Q7s','Q8s','Q8o','Q9o','J6s','J7s','J8s','J9s','J8o','J9o','JTo','T7s','T8s','T9s','T8o','T9o','97s','98s','87s','76s','65s'])
+    }
+  }
+};
+
+
 
 function loadUiState(){
   const defaults={
@@ -201,7 +374,11 @@ function loadUiState(){
     venueSort:'recent',
     lastSessionType:'cash',
     lastVenueId:'',
-    lastStake:''
+    lastStake:'',
+    rangeGame:'ring',
+    tournamentStack:'25',
+    rangeMode:'rfi',
+    rangePosition:'UTG'
   };
   try{
     const parsed=JSON.parse(localStorage.getItem(UI_STORAGE_KEY));
@@ -221,11 +398,20 @@ function updateUiState(values){
 let state = loadState();
 let uiState = loadUiState();
 let currentSessionType = 'cash';
-let currentRangePosition = 'UTG';
-let currentRangeMode = 'rfi';
+let currentRangeGame = uiState.rangeGame==='tournament'?'tournament':'ring';
+let currentTournamentStack = ['40','25','15'].includes(String(uiState.tournamentStack))
+  ?String(uiState.tournamentStack)
+  :'25';
+let currentRangePosition = ['UTG','HJ','CO','BTN','SB'].includes(uiState.rangePosition)
+  ?uiState.rangePosition
+  :'UTG';
+let currentRangeMode = ['rfi','bb'].includes(uiState.rangeMode)
+  ?uiState.rangeMode
+  :'rfi';
 let selectedPnHand = 'ATo';
 let pnCards = ['As','Th'];
 let equityCards = {hero:[null,null],villain:[null,null],board:[null,null,null,null,null]};
+let equityWorker = null;
 let activeCardTarget = null;
 let deferredInstallPrompt = null;
 
@@ -969,39 +1155,110 @@ function handLabel(row,col){
   if(row===col)return ranks[row]+ranks[col];
   return row<col?`${ranks[row]}${ranks[col]}s`:`${ranks[col]}${ranks[row]}o`;
 }
+function rangeScenario(){
+  if(currentRangeGame==='ring'){
+    return {
+      gameLabel:'リング',
+      stackLabel:'100BB',
+      context:'6-max・100BBの標準的な学習用レンジ',
+      rfi:ranges,
+      defense:bbDefenseRanges
+    };
+  }
+  const stack=currentTournamentStack;
+  return {
+    gameLabel:'トーナメント',
+    stackLabel:`${stack}BB`,
+    context:`アンティあり・6-max・${stack}BBのchipEV学習用レンジ`,
+    rfi:tournamentRfiRanges[stack],
+    defense:tournamentBbDefenseRanges[stack]
+  };
+}
 function renderRangeGrid(){
-  document.querySelectorAll('[data-range-mode]').forEach(b=>b.classList.toggle('active',b.dataset.rangeMode===currentRangeMode));
-  document.querySelectorAll('[data-position]').forEach(b=>{
-    b.classList.toggle('active',b.dataset.position===currentRangePosition);
-    b.textContent=currentRangeMode==='bb'?`vs ${b.dataset.position}`:b.dataset.position;
+  const scenario=rangeScenario();
+  document.querySelectorAll('[data-range-game]').forEach(button=>{
+    button.classList.toggle('active',button.dataset.rangeGame===currentRangeGame);
   });
+  document.getElementById('tournamentStackSelector').classList.toggle('hidden',currentRangeGame!=='tournament');
+  document.querySelectorAll('[data-tournament-stack]').forEach(button=>{
+    button.classList.toggle('active',button.dataset.tournamentStack===currentTournamentStack);
+  });
+  document.querySelectorAll('[data-range-mode]').forEach(button=>{
+    button.classList.toggle('active',button.dataset.rangeMode===currentRangeMode);
+  });
+  document.querySelectorAll('[data-position]').forEach(button=>{
+    button.classList.toggle('active',button.dataset.position===currentRangePosition);
+    button.textContent=currentRangeMode==='bb'?`vs ${button.dataset.position}`:button.dataset.position;
+  });
+
   const title=document.getElementById('rangePageTitle');
   const legend=document.getElementById('rangeLegend');
   const hint=document.getElementById('rangeHint');
+  const contextBadge=document.getElementById('rangeContextBadge');
+  const contextDescription=document.getElementById('rangeContextDescription');
+
+  contextBadge.textContent=`${scenario.gameLabel}・${scenario.stackLabel}`;
+  contextDescription.textContent=scenario.context;
+
   if(currentRangeMode==='rfi'){
-    title.textContent='6-max RFIレンジ表';
-    legend.innerHTML='<span><i class="dot open"></i>オープン</span><span><i class="dot fold"></i>フォールド</span>';
-    hint.textContent='標準的な100BB・6-maxの学習用簡易レンジです。レーキ、相手、オープンサイズに応じて調整してください。';
-    const set=ranges[currentRangePosition];
-    document.getElementById('rangeGrid').innerHTML=ranks.flatMap((_,r)=>ranks.map((__,c)=>{
-      const hand=handLabel(r,c);return `<button class="hand-cell ${set.has(hand)?'open':''}" title="${hand}">${hand}</button>`;
+    const shortStack=currentRangeGame==='tournament'&&currentTournamentStack==='15';
+    title.textContent=currentRangeGame==='ring'
+      ?'リング RFIレンジ表'
+      :`トーナメント ${currentTournamentStack}BB RFIレンジ`;
+    legend.innerHTML=shortStack
+      ?'<span><i class="dot open"></i>参加候補</span><span><i class="dot fold"></i>フォールド</span>'
+      :'<span><i class="dot open"></i>オープン</span><span><i class="dot fold"></i>フォールド</span>';
+    hint.textContent=currentRangeGame==='ring'
+      ?'標準的な100BB・6-maxの学習用簡易レンジです。レーキ、相手、オープンサイズに応じて調整してください。'
+      :shortStack
+        ?'15BBではミンレイズとオールインが混在します。表示は参加候補の目安です。バブル・ファイナル・サテライトなどICMが強い局面では必ず調整してください。'
+        :`アンティあり・${currentTournamentStack}BB・6-maxを想定したchipEVの学習用簡易レンジです。バブルや賞金ジャンプがある局面ではICMに応じて調整してください。`;
+    const set=scenario.rfi[currentRangePosition];
+    document.getElementById('rangeGrid').innerHTML=ranks.flatMap((_,row)=>ranks.map((__,col)=>{
+      const hand=handLabel(row,col);
+      return `<button class="hand-cell ${set.has(hand)?'open':''}" title="${hand}">${hand}</button>`;
     })).join('');
   }else{
-    title.textContent='BBディフェンスレンジ';
-    legend.innerHTML='<span><i class="dot threebet"></i>3ベット</span><span><i class="dot call"></i>コール</span><span><i class="dot fold"></i>フォールド</span>';
-    hint.textContent=`100BB・6-maxで${currentRangePosition}から約2.5BBオープンを受けた場合の学習用簡易レンジです。レーキが高いライブゲームではコールをやや絞ってください。`;
-    const defense=bbDefenseRanges[currentRangePosition];
-    document.getElementById('rangeGrid').innerHTML=ranks.flatMap((_,r)=>ranks.map((__,c)=>{
-      const hand=handLabel(r,c);
+    const shortStack=currentRangeGame==='tournament'&&currentTournamentStack==='15';
+    title.textContent=currentRangeGame==='ring'
+      ?'リング BBディフェンス'
+      :`トーナメント ${currentTournamentStack}BB BBディフェンス`;
+    legend.innerHTML=shortStack
+      ?'<span><i class="dot threebet"></i>オールイン</span><span><i class="dot call"></i>コール</span><span><i class="dot fold"></i>フォールド</span>'
+      :'<span><i class="dot threebet"></i>3ベット</span><span><i class="dot call"></i>コール</span><span><i class="dot fold"></i>フォールド</span>';
+    hint.textContent=currentRangeGame==='ring'
+      ?`100BB・6-maxで${currentRangePosition}から約2.5BBオープンを受けた場合の学習用簡易レンジです。レーキが高いライブゲームではコールをやや絞ってください。`
+      :shortStack
+        ?`${currentRangePosition}の約2BBオープンに対する15BBの簡易目安です。青は主にオールイン候補、黄はコール候補です。ICMが強い場面ではオールインを慎重に調整してください。`
+        :`${currentRangePosition}の約2〜2.2BBオープンに対する${currentTournamentStack}BBのchipEV学習用簡易レンジです。アンティ、相手のサイズ、ICMに応じて調整してください。`;
+    const defense=scenario.defense[currentRangePosition];
+    document.getElementById('rangeGrid').innerHTML=ranks.flatMap((_,row)=>ranks.map((__,col)=>{
+      const hand=handLabel(row,col);
       const action=defense.threebet.has(hand)?'threebet':defense.call.has(hand)?'call':'';
       return `<button class="hand-cell ${action}" title="${hand}">${hand}</button>`;
     })).join('');
   }
 }
-document.querySelectorAll('[data-range-mode]').forEach(b=>b.addEventListener('click',()=>{
-  currentRangeMode=b.dataset.rangeMode;renderRangeGrid();
+document.querySelectorAll('[data-range-game]').forEach(button=>button.addEventListener('click',()=>{
+  currentRangeGame=button.dataset.rangeGame;
+  updateUiState({rangeGame:currentRangeGame});
+  renderRangeGrid();
 }));
-document.querySelectorAll('[data-position]').forEach(b=>b.addEventListener('click',()=>{currentRangePosition=b.dataset.position;renderRangeGrid()}));
+document.querySelectorAll('[data-tournament-stack]').forEach(button=>button.addEventListener('click',()=>{
+  currentTournamentStack=button.dataset.tournamentStack;
+  updateUiState({tournamentStack:currentTournamentStack});
+  renderRangeGrid();
+}));
+document.querySelectorAll('[data-range-mode]').forEach(button=>button.addEventListener('click',()=>{
+  currentRangeMode=button.dataset.rangeMode;
+  updateUiState({rangeMode:currentRangeMode});
+  renderRangeGrid();
+}));
+document.querySelectorAll('[data-position]').forEach(button=>button.addEventListener('click',()=>{
+  currentRangePosition=button.dataset.position;
+  updateUiState({rangePosition:currentRangePosition});
+  renderRangeGrid();
+}));
 
 function setTool(tool,save=true){
   document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool===tool));
@@ -1204,61 +1461,135 @@ function equityInput(){
   if(new Set(all).size!==all.length)return {error:'同じカードが重複しています。'};
   return {hero,villain:villain.length===2?villain:null,board};
 }
-function recordEquityResult(result,counter){
-  const cmp=compareHands(evaluateSeven([...result.hero,...result.board]),evaluateSeven([...result.villain,...result.board]));
-  if(cmp>0)counter.wins++;else if(cmp<0)counter.losses++;else counter.ties++;
-  counter.total++;
+function formatEquityPercent(value){
+  return `${num(value).toFixed(2)}%`;
+}
+function stopEquityWorker(message=''){
+  if(equityWorker){
+    equityWorker.terminate();
+    equityWorker=null;
+  }
+  document.getElementById('calculateEquityBtn').disabled=false;
+  document.getElementById('equityProgressWrap').classList.add('hidden');
+  if(message)document.getElementById('equityMethod').textContent=message;
+}
+function setEquityProgress(processed,total){
+  const percent=total?Math.min(100,processed/total*100):0;
+  document.getElementById('equityProgressWrap').classList.remove('hidden');
+  document.getElementById('equityProgressBar').style.width=`${percent}%`;
+  document.getElementById('equityProgressPercent').textContent=`${percent.toFixed(0)}%`;
+  document.getElementById('equityProgressText').textContent=
+    `${processed.toLocaleString()} / ${total.toLocaleString()} 通り`;
+}
+function renderExactEquityResult(result){
+  const heroWin=result.wins/result.total*100;
+  const tie=result.ties/result.total*100;
+  const villainWin=result.losses/result.total*100;
+  const heroEq=(result.wins+result.ties/2)/result.total*100;
+  const villainEq=100-heroEq;
+
+  document.getElementById('heroEquity').textContent=formatEquityPercent(heroEq);
+  document.getElementById('heroWin').textContent=formatEquityPercent(heroWin);
+  document.getElementById('heroTie').textContent=formatEquityPercent(tie);
+  document.getElementById('villainEquity').textContent=formatEquityPercent(villainEq);
+  document.getElementById('villainWin').textContent=formatEquityPercent(villainWin);
+  document.getElementById('villainTie').textContent=formatEquityPercent(tie);
+
+  document.getElementById('equityResult').innerHTML=
+    `自分のエクイティ <strong>${formatEquityPercent(heroEq)}</strong>`+
+    `<div class="equity-meter"><div class="equity-meter-fill" style="width:${heroEq}%"></div></div>`+
+    `<div class="exact-count-grid">`+
+      `<span><small>勝ち</small><strong>${result.wins.toLocaleString()}</strong></span>`+
+      `<span><small>引分</small><strong>${result.ties.toLocaleString()}</strong></span>`+
+      `<span><small>負け</small><strong>${result.losses.toLocaleString()}</strong></span>`+
+    `</div>`;
+
+  const opponentText=result.villainMode==='random'?'ランダム相手':'指定ハンド';
+  document.getElementById('equityMethod').textContent=
+    `${opponentText}に対して全${result.total.toLocaleString()}通りを完全列挙しました。乱数は使用していません。Tieは双方のエクイティへ半分ずつ加算しています。`;
 }
 function calculateEquityNow(){
   const input=equityInput();
   const resultEl=document.getElementById('equityResult');
-  if(input.error){resultEl.innerHTML=`<span class="negative">${input.error}</span>`;return;}
-  const known=[...input.hero,...(input.villain||[]),...input.board];
-  const remaining=fullDeck().filter(c=>!known.includes(c));
-  const villainMissing=input.villain?0:2,boardMissing=5-input.board.length,unknownCount=villainMissing+boardMissing;
-  const counter={wins:0,ties:0,losses:0,total:0};
-  let method='';
-  if(unknownCount===0){
-    recordEquityResult({hero:input.hero,villain:input.villain,board:input.board},counter);method='確定ボード';
-  }else if(unknownCount===1){
-    remaining.forEach(card=>recordEquityResult({hero:input.hero,villain:input.villain,board:[...input.board,card]},counter));method=`全${counter.total.toLocaleString()}通りを厳密計算`;
-  }else if(unknownCount===2&&(villainMissing===2||boardMissing===2)){
-    for(let i=0;i<remaining.length-1;i++)for(let j=i+1;j<remaining.length;j++){
-      const two=[remaining[i],remaining[j]];
-      recordEquityResult({hero:input.hero,villain:villainMissing===2?two:input.villain,board:boardMissing===2?[...input.board,...two]:input.board},counter);
-    }
-    method=`全${counter.total.toLocaleString()}通りを厳密計算`;
-  }else{
-    const simulations=25000;
-    for(let n=0;n<simulations;n++){
-      const pool=remaining.slice();
-      for(let i=0;i<unknownCount;i++){const j=i+Math.floor(Math.random()*(pool.length-i));[pool[i],pool[j]]=[pool[j],pool[i]];}
-      let cursor=0;const villain=input.villain||[pool[cursor++],pool[cursor++]];const board=[...input.board];while(board.length<5)board.push(pool[cursor++]);
-      recordEquityResult({hero:input.hero,villain,board},counter);
-    }
-    method=`モンテカルロ ${counter.total.toLocaleString()}回`;
+
+  if(input.error){
+    resultEl.innerHTML=`<span class="negative">${input.error}</span>`;
+    return;
   }
-  const heroWin=counter.wins/counter.total*100,tie=counter.ties/counter.total*100,villainWin=counter.losses/counter.total*100;
-  const heroEq=(counter.wins+counter.ties/2)/counter.total*100,villainEq=100-heroEq;
-  document.getElementById('heroEquity').textContent=pct(heroEq);document.getElementById('heroWin').textContent=pct(heroWin);document.getElementById('heroTie').textContent=pct(tie);
-  document.getElementById('villainEquity').textContent=pct(villainEq);document.getElementById('villainWin').textContent=pct(villainWin);document.getElementById('villainTie').textContent=pct(tie);
-  resultEl.innerHTML=`自分のエクイティ <strong>${pct(heroEq)}</strong><div class="equity-meter"><div class="equity-meter-fill" style="width:${heroEq}%"></div></div>`;
-  document.getElementById('equityMethod').textContent=`${method}。Tieは双方のエクイティへ半分ずつ加算しています。`;
+  if(!input.villain&&input.board.length===0){
+    resultEl.innerHTML=
+      `<span class="negative">プリフロップで相手をランダムにした完全計算は約21億通りになるため、相手の2枚を指定してください。</span>`;
+    document.getElementById('equityMethod').textContent=
+      '相手のハンドを指定すれば、プリフロップでも残り1,712,304ボードを完全列挙します。相手ランダムはフロップ以降に利用できます。';
+    return;
+  }
+  if(typeof Worker==='undefined'){
+    resultEl.innerHTML='<span class="negative">このブラウザは完全計算用のWeb Workerに対応していません。</span>';
+    return;
+  }
+
+  stopEquityWorker();
+  resetEquityStats();
+  document.getElementById('calculateEquityBtn').disabled=true;
+  document.getElementById('equityResult').textContent='完全計算を開始しています…';
+  document.getElementById('equityProgressBar').style.width='0%';
+  document.getElementById('equityProgressPercent').textContent='0%';
+  document.getElementById('equityProgressText').textContent='組み合わせ数を準備しています';
+  document.getElementById('equityProgressWrap').classList.remove('hidden');
+
+  equityWorker=new Worker('./equity-worker.js?v=4.2.0');
+  equityWorker.onmessage=event=>{
+    const message=event.data;
+    if(message.type==='progress'){
+      setEquityProgress(message.processed,message.total);
+      return;
+    }
+    if(message.type==='result'){
+      renderExactEquityResult(message);
+      stopEquityWorker();
+      return;
+    }
+    if(message.type==='error'){
+      if(message.code==='PREFLOP_RANDOM_TOO_LARGE'){
+        resultEl.innerHTML='<span class="negative">プリフロップ対ランダムは相手の2枚を指定してください。</span>';
+      }else{
+        resultEl.innerHTML=`<span class="negative">計算できませんでした：${esc(message.message)}</span>`;
+      }
+      stopEquityWorker('入力内容を確認して、もう一度計算してください。');
+    }
+  };
+  equityWorker.onerror=()=>{
+    resultEl.innerHTML='<span class="negative">完全計算中にエラーが発生しました。</span>';
+    stopEquityWorker('計算を中止しました。');
+  };
+  equityWorker.postMessage({
+    hero:input.hero,
+    villain:input.villain,
+    board:input.board
+  });
 }
-document.getElementById('calculateEquityBtn').addEventListener('click',()=>{
-  const button=document.getElementById('calculateEquityBtn');button.disabled=true;document.getElementById('equityResult').textContent='計算中…';
-  setTimeout(()=>{try{calculateEquityNow();}finally{button.disabled=false;}},20);
+document.getElementById('calculateEquityBtn').addEventListener('click',calculateEquityNow);
+document.getElementById('cancelEquityBtn').addEventListener('click',()=>{
+  stopEquityWorker('計算を中止しました。カードを変更して再計算できます。');
+  document.getElementById('equityResult').textContent='計算を中止しました。';
 });
 document.getElementById('resetEquityBtn').addEventListener('click',()=>{
-  equityCards={hero:[null,null],villain:[null,null],board:[null,null,null,null,null]};resetEquityStats();renderVisualCards();
+  stopEquityWorker();
+  equityCards={hero:[null,null],villain:[null,null],board:[null,null,null,null,null]};
+  resetEquityStats();
+  renderVisualCards();
 });
 document.getElementById('randomVillainBtn').addEventListener('click',()=>{
-  equityCards.villain=[null,null];resetEquityStats();renderVisualCards();showToast('相手をランダムハンドに戻しました');
+  stopEquityWorker();
+  equityCards.villain=[null,null];
+  resetEquityStats();
+  renderVisualCards();
+  showToast('相手をランダムハンドに戻しました');
 });
 function resetEquityStats(){
   ['heroEquity','heroWin','heroTie','villainEquity','villainWin','villainTie'].forEach(id=>document.getElementById(id).textContent='—');
   document.getElementById('equityResult').textContent='カード枠をタップして、自分のハンドを選択してください。';
-  document.getElementById('equityMethod').textContent='ボードは未入力でも計算できます。相手を未入力にするとランダムハンドとして計算します。';
+  document.getElementById('equityMethod').textContent='乱数は使わず全組み合わせを完全列挙します。プリフロップでは相手の2枚を指定してください。相手ランダムはフロップ以降に利用できます。';
 }
 
 function renderDraw(){
@@ -1313,19 +1644,66 @@ function pnForHand(hand){
 }
 document.getElementById('clearPnCardsBtn').addEventListener('click',()=>{pnCards=[null,null];renderVisualCards();});
 
-function renderPower(){
-  const stack=num(document.getElementById('pnStack').value),cpr=num(document.getElementById('pnSb').value)+num(document.getElementById('pnBb').value)+num(document.getElementById('pnAnteTotal').value);
-  const behind=Math.max(1,num(document.getElementById('pnBehind').value)),m=cpr?stack/cpr:0,required=m*behind,hand=canonicalHandFromCards(pnCards),pn=pnForHand(hand);
-  if(!hand){document.getElementById('pnResult').innerHTML=`M値 <strong>${m.toFixed(2)}</strong>・必要PN <strong>${required.toFixed(1)}</strong><br><span class="muted">自分のハンドを2枚選択してください。</span>`;}else{
-    const ok=pn>=required;
-    document.getElementById('pnResult').innerHTML=`M値 <strong>${m.toFixed(2)}</strong>・必要PN <strong>${required.toFixed(1)}</strong><br>${hand} のPNは <strong>${pn>=80?'75+':pn}</strong>：<span class="${ok?'positive':'negative'}">${ok?'数式上はプッシュ候補':'数式上はフォールド寄り'}</span>`;
-  }
-  document.getElementById('pnGrid').innerHTML=ranks.flatMap((_,r)=>ranks.map((__,c)=>{
-    const hand=handLabel(r,c),val=powerMatrix[r][c],klass=val>=35?'pn-high':val>=20?'pn-mid':'pn-low';
-    return `<button class="hand-cell ${klass} ${hand===canonicalHandFromCards(pnCards)?'selected':''}" data-pn-hand="${hand}" title="${hand}: ${val>=80?'75+':val}">${hand}<small>${val>=80?'75+':val<2?'–':val}</small></button>`;
-  })).join('');
+function pnDisplayValue(value){
+  return value>=80?'all':value<2?'—':String(value);
 }
-['pnStack','pnSb','pnBb','pnAnteTotal','pnBehind'].forEach(id=>document.getElementById(id).addEventListener('input',renderPower));
+function pnTierClass(value){
+  if(value>=75)return 'pn-tier-max';
+  if(value>=50)return 'pn-tier-4';
+  if(value>=30)return 'pn-tier-3';
+  if(value>=15)return 'pn-tier-2';
+  if(value>=2)return 'pn-tier-1';
+  return 'pn-tier-zero';
+}
+function renderPower(){
+  const stack=num(document.getElementById('pnStack').value);
+  const cpr=
+    num(document.getElementById('pnSb').value)+
+    num(document.getElementById('pnBb').value)+
+    num(document.getElementById('pnAnteTotal').value);
+  const behind=Math.max(1,num(document.getElementById('pnBehind').value));
+  const m=cpr?stack/cpr:0;
+  const required=m*behind;
+  const selectedHand=canonicalHandFromCards(pnCards);
+  const selectedPn=pnForHand(selectedHand);
+
+  document.getElementById('pnThresholdLabel').textContent=required.toFixed(1);
+
+  if(!selectedHand){
+    document.getElementById('pnResult').innerHTML=
+      `M値 <strong>${m.toFixed(2)}</strong>・必要PN <strong>${required.toFixed(1)}</strong><br>`+
+      `<span class="muted">自分のハンドを2枚選択してください。白い枠のハンドが必要PN以上です。</span>`;
+  }else{
+    const ok=selectedPn>=required;
+    document.getElementById('pnResult').innerHTML=
+      `M値 <strong>${m.toFixed(2)}</strong>・必要PN <strong>${required.toFixed(1)}</strong><br>`+
+      `${selectedHand} のPNは <strong>${pnDisplayValue(selectedPn)}</strong>：`+
+      `<span class="${ok?'positive':'negative'}">${ok?'必要PNを満たしています':'必要PNを下回っています'}</span>`;
+  }
+
+  let qualifiedCount=0;
+  const selected=canonicalHandFromCards(pnCards);
+  const cells=ranks.flatMap((_,row)=>ranks.map((__,col)=>{
+    const hand=handLabel(row,col);
+    const value=powerMatrix[row][col];
+    const qualifies=value>=required;
+    if(qualifies)qualifiedCount++;
+    const classes=[
+      'hand-cell',
+      pnTierClass(value),
+      qualifies?'pn-qualified':'pn-below',
+      hand===selected?'selected':''
+    ].filter(Boolean).join(' ');
+
+    return `<button class="${classes}" data-pn-hand="${hand}" `+
+      `title="${hand}：PN ${pnDisplayValue(value)}／必要 ${required.toFixed(1)}">`+
+      `<span>${hand}</span><small>${pnDisplayValue(value)}</small></button>`;
+  }));
+
+  document.getElementById('pnQualifiedCount').textContent=`${qualifiedCount} / 169`;
+  document.getElementById('pnGrid').innerHTML=cells.join('');
+}
+['pnStack' ,'pnSb','pnBb','pnAnteTotal','pnBehind'].forEach(id=>document.getElementById(id).addEventListener('input',renderPower));
 document.getElementById('pnGrid').addEventListener('click',e=>{
   const b=e.target.closest('[data-pn-hand]');if(!b)return;selectedPnHand=b.dataset.pnHand;pnCards=representativeCardsForHand(selectedPnHand);renderVisualCards();renderPower();
 });
