@@ -1,11 +1,24 @@
 'use strict';
 
-const APP_VERSION = '4.2.0';
+const APP_VERSION = '4.3.0';
 const APP_CHANGELOG = [
+  {
+    version:'4.3.0',
+    title:'設定・数値入力・ツール再編',
+    current:true,
+    changes:[
+      'リングステークス候補と基本設定を別パネルへ分離',
+      '基準通貨とセッション損失上限を設定画面下部へ移動',
+      '数値候補の100や500が1や5になる不具合を修正',
+      'ベット対応と対レイズをオッズ計算へ統合',
+      'アウト表記をアウツへ変更',
+      '計算ツールを4つのコンパクトな1行メニューへ変更'
+    ]
+  },
   {
     version:'4.2.0',
     title:'完全勝率計算とPN可視化',
-    current:true,
+    current:false,
     changes:[
       '勝率計算からモンテカルロ法を廃止し、残りカードの全組み合わせを完全列挙',
       '重い計算をWeb Workerへ分離し、進捗表示と中止ボタンを追加',
@@ -378,7 +391,8 @@ function loadUiState(){
     rangeGame:'ring',
     tournamentStack:'25',
     rangeMode:'rfi',
-    rangePosition:'UTG'
+    rangePosition:'UTG',
+    oddsMode:'bet'
   };
   try{
     const parsed=JSON.parse(localStorage.getItem(UI_STORAGE_KEY));
@@ -590,7 +604,7 @@ function go(pageId){
   if(pageId==='ranges')renderRangeGrid();
   if(pageId==='tools'){
     renderOdds();renderRaiseOdds();renderDraw();renderPower();
-    setTool(uiState.lastTool||'odds',false);
+    setTool(uiState.lastTool==='raise'?'odds':(uiState.lastTool||'odds'),false);
   }
   if(pageId==='more'){
     renderHands();renderBankroll();renderSettings();
@@ -1261,15 +1275,34 @@ document.querySelectorAll('[data-position]').forEach(button=>button.addEventList
 }));
 
 function setTool(tool,save=true){
-  document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool===tool));
-  document.getElementById('oddsTool').classList.toggle('hidden',tool!=='odds');
-  document.getElementById('raiseTool').classList.toggle('hidden',tool!=='raise');
-  document.getElementById('equityTool').classList.toggle('hidden',tool!=='equity');
-  document.getElementById('drawTool').classList.toggle('hidden',tool!=='draw');
-  document.getElementById('powerTool').classList.toggle('hidden',tool!=='power');
-  if(save)updateUiState({lastTool:tool});
+  const resolved=tool==='raise'?'odds':tool;
+  document.querySelectorAll('[data-tool]').forEach(button=>{
+    button.classList.toggle('active',button.dataset.tool===resolved);
+  });
+  document.getElementById('oddsTool').classList.toggle('hidden',resolved!=='odds');
+  document.getElementById('equityTool').classList.toggle('hidden',resolved!=='equity');
+  document.getElementById('drawTool').classList.toggle('hidden',resolved!=='draw');
+  document.getElementById('powerTool').classList.toggle('hidden',resolved!=='power');
+  if(resolved==='odds')setOddsMode(uiState.oddsMode||'bet',false);
+  if(save)updateUiState({lastTool:resolved});
 }
 document.querySelector('.tool-tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tool]');if(b)setTool(b.dataset.tool);});
+
+
+function setOddsMode(mode,save=true){
+  const resolved=mode==='raise'?'raise':'bet';
+  document.querySelectorAll('[data-odds-mode]').forEach(button=>{
+    button.classList.toggle('active',button.dataset.oddsMode===resolved);
+  });
+  document.getElementById('betOddsPane').classList.toggle('hidden',resolved!=='bet');
+  document.getElementById('raiseOddsPane').classList.toggle('hidden',resolved!=='raise');
+  document.getElementById('oddsModeBadge').textContent=
+    resolved==='bet'?'ベットにコール':'レイズにコール';
+  if(save)updateUiState({oddsMode:resolved});
+}
+document.querySelectorAll('[data-odds-mode]').forEach(button=>{
+  button.addEventListener('click',()=>setOddsMode(button.dataset.oddsMode));
+});
 
 function renderOdds(){
   const pot=num(document.getElementById('oddsPot').value),bet=num(document.getElementById('oddsBet').value),call=num(document.getElementById('oddsCall').value);
@@ -1826,7 +1859,7 @@ const NUMBER_INPUT_CONFIGS = {
   tournamentHours:{step:.25,presets:[1,2,3,4,6,8],suffix:'時間'},
   tournamentField:{step:1,presets:[6,9,18,27,45,90],suffix:'人'},
   tournamentPlace:{step:1,presets:[1,2,3,4,5,9],suffix:'位'},
-  drawOuts:{step:1,presets:[4,6,8,9,12,15],suffix:'アウト'},
+  drawOuts:{step:1,presets:[4,6,8,9,12,15],suffix:'アウツ'},
   pnBehind:{step:1,presets:[1,2,3,4,5,6],suffix:'人'},
   bankrollCashTarget:{step:1,presets:[20,30,40,50,100],suffix:'BI'},
   bankrollTournamentTarget:{step:1,presets:[50,100,150,200,300],suffix:'回'},
@@ -1887,8 +1920,12 @@ function numberInputLabel(input){
 }
 function stripNumberZeros(value,decimals=4){
   if(!Number.isFinite(value))return '0';
-  const fixed=value.toFixed(decimals);
-  return fixed.replace(/\.?0+$/,'');
+  if(decimals<=0)return String(Math.round(value));
+  let fixed=value.toFixed(decimals);
+  if(fixed.includes('.')){
+    fixed=fixed.replace(/0+$/,'').replace(/\.$/,'');
+  }
+  return fixed;
 }
 function clampNumber(value,config){
   return Math.min(config.max,Math.max(config.min,value));
@@ -2029,15 +2066,15 @@ function initializeCollapsibleSections(){
     {selector:'#sessionForm',key:'session-input',label:'セッション入力',formLike:true},
     {selector:'#venueForm',key:'venue-input',label:'店舗情報入力',formLike:true},
     {selector:'#chipTransactionForm',key:'chip-input',label:'チップ購入・換金入力',formLike:true},
-    {selector:'#oddsTool',key:'odds-input',label:'ベット対応ツール',removeHeading:true},
-    {selector:'#raiseTool',key:'raise-input',label:'対レイズツール',removeHeading:true},
+    {selector:'#oddsTool',key:'odds-input',label:'オッズ計算'},
     {selector:'#equityTool',key:'equity-input',label:'勝率計算ツール'},
-    {selector:'#drawTool',key:'draw-input',label:'アウト・ドロー計算',removeHeading:true},
+    {selector:'#drawTool',key:'draw-input',label:'アウツ・ドロー計算',removeHeading:true},
     {selector:'#powerTool',key:'power-input',label:'パワーナンバーツール',removeHeading:true},
     {selector:'#handForm',key:'hand-input',label:'ハンドメモ入力',formLike:true},
     {selector:'#bankrollSettingsInput',key:'bankroll-settings',label:'バンクロール基準値',formLike:true,removeHeading:true},
     {selector:'#bankrollTransactionForm',key:'bankroll-transaction',label:'バンクロール入出金',formLike:true},
-    {selector:'#settingsPanel',key:'app-settings',label:'アプリ設定',formLike:true,removeHeading:true}
+    {selector:'#ringStakeSettingsPanel',key:'stake-settings',label:'リングステークス候補'},
+    {selector:'#appSettingsPanel',key:'app-settings',label:'基本設定'}
   ];
   const prefs=loadCollapsePreferences();
   configs.forEach(config=>{
@@ -2120,7 +2157,7 @@ function runQuickAction(action){
     go('venues');setVenueView('list');openCollapsible('venue-input');
   }
   if(action==='stake-setup'){
-    go('more');setMoreView('settings');openCollapsible('app-settings');
+    go('more');setMoreView('settings');openCollapsible('stake-settings');
     setTimeout(()=>document.getElementById('ringStakeForm').scrollIntoView({behavior:'smooth',block:'center'}),80);
   }
 }
@@ -2387,7 +2424,7 @@ function renderAll(){
   renderHome();renderSessions();renderVenues();renderRangeGrid();renderOdds();renderRaiseOdds();renderDraw();renderPower();renderHands();renderBankroll();renderSettings();
   setVenueView(uiState.venueView||'list',false);
   setMoreView(uiState.moreView||'review',false);
-  setTool(uiState.lastTool||'odds',false);
+  setTool(uiState.lastTool==='raise'?'odds':(uiState.lastTool||'odds'),false);
 }
 document.getElementById('sessionDate').value=today();document.getElementById('handDate').value=today();document.getElementById('bankrollTransactionDate').value=today();document.getElementById('chipTransactionDate').value=today();
 buildPnHandPicker();initializeSmartNumberInputs();initializeCollapsibleSections();resetSessionForm();renderAll();renderVisualCards();
