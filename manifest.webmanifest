@@ -1,7 +1,7 @@
 {
   "name": "Poker Mate - ポーカー収支・学習ツール",
   "short_name": "Poker Mate",
-  "description": "代表例から選べるアウツ計算、モード別オッズ早見表、完全勝率計算、パワーナンバー、レンジ、収支・チップ・バンクロールを管理するポーカーPWA",
+  "description": "セッションタイマー、月次・年次レポート、ステークス・店舗・MTT分析、完全勝率計算、レンジ、チップ・バンクロールを管理するポーカーPWA",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

@@ -5,6 +5,13 @@ const local=new Date(2026,6,12,0,30);assert.strictEqual(Core.localDateString(loc
 let odds=Core.calculateBetOdds({pot:100,bet:50,call:50});close(odds.need,25);assert.strictEqual(odds.finalPot,200);
 let raise=Core.calculateRaiseOdds({pot:100,ownBet:50,raiseTo:150});close(raise.need,25);assert.strictEqual(raise.call,100);assert.strictEqual(raise.finalPot,400);
 let draw=Core.calculateDrawOdds({street:'flop',outs:9});close(draw.next,9/47*100);close(draw.byRiver,(1-(38/47)*(37/46))*100);assert.strictEqual(draw.outs,9);
+close(Core.calculateDurationHours('10:00','14:30'),4.5);
+close(Core.calculateDurationHours('23:30','01:00'),1.5);
+assert.strictEqual(Core.calculateDurationHours('invalid','01:00'),0);
+let dd=Core.calculateDrawdown([100,-50,-100,200,-300]);
+assert.strictEqual(dd.peak,150);
+assert.strictEqual(dd.currentDrawdown,300);
+assert.strictEqual(dd.maxDrawdown,300);
 assert.strictEqual(Core.calculateVenueBalance({openingBalance:1000,transactions:[{amount:500},{amount:-200}],sessions:[{chipDelta:300},{chipDelta:-100}]}),1500);
 assert.strictEqual(Core.deriveOpeningBalance(1500,300,200),1000);
 const worker=fs.readFileSync(path.join(__dirname,'..','equity-worker.js'),'utf8');const context={self:{postMessage(){}},console};vm.createContext(context);vm.runInContext(worker+'\nself.__test={parseCard,evaluate7};',context);const {parseCard,evaluate7}=context.self.__test;

@@ -40,9 +40,50 @@
       miss:100-byRiver
     };
   }
+
+  function calculateDurationHours(startTime,endTime){
+    const parse=value=>{
+      const match=String(value||'').match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+      return match?Number(match[1])*60+Number(match[2]):null;
+    };
+    const start=parse(startTime),end=parse(endTime);
+    if(start===null||end===null)return 0;
+    let minutes=end-start;
+    if(minutes<0)minutes+=24*60;
+    return minutes/60;
+  }
+  function calculateDrawdown(values=[]){
+    let cumulative=0;
+    let peak=0;
+    let peakIndex=-1;
+    let maxDrawdown=0;
+    let maxDrawdownPeakIndex=-1;
+    let maxDrawdownEndIndex=-1;
+    values.forEach((raw,index)=>{
+      cumulative+=number(raw);
+      if(cumulative>peak){
+        peak=cumulative;
+        peakIndex=index;
+      }
+      const drawdown=peak-cumulative;
+      if(drawdown>maxDrawdown){
+        maxDrawdown=drawdown;
+        maxDrawdownPeakIndex=peakIndex;
+        maxDrawdownEndIndex=index;
+      }
+    });
+    return {
+      cumulative,
+      peak,
+      currentDrawdown:Math.max(0,peak-cumulative),
+      maxDrawdown,
+      maxDrawdownPeakIndex,
+      maxDrawdownEndIndex
+    };
+  }
   function calculateVenueBalance({openingBalance,transactions=[],sessions=[]}){
     return number(openingBalance)+transactions.reduce((sum,item)=>sum+number(item.amount),0)+sessions.reduce((sum,item)=>sum+number(item.chipDelta),0);
   }
   function deriveOpeningBalance(currentBalance,transactionTotal,sessionTotal){return number(currentBalance)-number(transactionTotal)-number(sessionTotal);}
-  return {number,localDateString,isValidIsoDate,calculateBetOdds,calculateRaiseOdds,calculateDrawOdds,calculateVenueBalance,deriveOpeningBalance};
+  return {number,localDateString,isValidIsoDate,calculateBetOdds,calculateRaiseOdds,calculateDrawOdds,calculateDurationHours,calculateDrawdown,calculateVenueBalance,deriveOpeningBalance};
 });

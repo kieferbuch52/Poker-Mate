@@ -11,7 +11,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./styles.css?v=5.2.1">
+  <link rel="stylesheet" href="./styles.css?v=6.0.0">
 </head>
 <body>
   <header class="topbar">
@@ -21,7 +21,7 @@
     </div>
     <div class="top-actions">
       <button id="globalQuickButton" class="top-quick-button" type="button" aria-haspopup="dialog" aria-controls="quickActionSheet" aria-label="クイック操作を開く">＋</button>
-      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v5.2.1</button>
+      <button id="appVersion" class="version-badge version-trigger" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">v6.0.0</button>
       <button id="installBtn" class="ghost hidden">ホーム画面に追加</button>
     </div>
   </header>
@@ -65,6 +65,24 @@
 
       <div class="stats-grid home-kpi-grid" id="homeStats"></div>
       <div id="homeInsights" class="home-insight-grid"></div>
+
+      <section class="panel performance-report-panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">PERFORMANCE REPORT</p>
+            <h2>月次・年次レポート</h2>
+          </div>
+          <div class="report-controls">
+            <select id="reportMode" class="small-select" aria-label="レポート単位">
+              <option value="month">月次</option>
+              <option value="year">年次</option>
+            </select>
+            <select id="reportPeriod" class="small-select" aria-label="対象期間"></select>
+          </div>
+        </div>
+        <div id="reportSummary" class="report-summary-grid"></div>
+        <div id="reportBreakdown" class="report-breakdown"></div>
+      </section>
 
       <section class="panel">
         <div class="section-head">
@@ -131,6 +149,30 @@
           </label>
         </div>
 
+        <section class="session-timer-panel">
+          <div class="session-timer-display">
+            <div>
+              <span id="sessionTimerStatus">タイマー未開始</span>
+              <strong id="sessionTimerDisplay">00:00:00</strong>
+            </div>
+            <div class="session-timer-actions">
+              <button id="startSessionTimerBtn" type="button">開始</button>
+              <button id="pauseSessionTimerBtn" type="button" class="hidden">一時停止</button>
+              <button id="resumeSessionTimerBtn" type="button" class="hidden">再開</button>
+              <button id="endSessionTimerBtn" type="button" disabled>終了</button>
+            </div>
+          </div>
+          <div class="session-clock-grid">
+            <label>開始時刻
+              <input id="sessionStartTime" type="time">
+            </label>
+            <label>終了時刻
+              <input id="sessionEndTime" type="time">
+            </label>
+          </div>
+          <p class="hint no-margin">開始・一時停止・再開・終了からプレー時間を自動計算します。日をまたぐセッションにも対応します。</p>
+        </section>
+
         <div id="cashFields">
           <div class="grid two">
             <label>ステークス（SB / BB）
@@ -170,9 +212,12 @@
               <input id="tournamentHours" type="number" inputmode="decimal" min="0" step="0.25">
             </label>
           </div>
-          <div class="grid two">
+          <div class="grid tournament-cost-grid">
             <label>初回バイイン
               <input id="tournamentBuyIn" type="number" inputmode="decimal" min="0" step="0.01">
+            </label>
+            <label>リエントリー回数
+              <input id="tournamentReentryCount" type="number" inputmode="numeric" min="0" step="1" value="0">
             </label>
             <label>リエントリー・アドオン合計
               <input id="tournamentReentry" type="number" inputmode="decimal" min="0" step="0.01" value="0">
@@ -183,15 +228,38 @@
           </label>
         </div>
 
-        <div class="grid two">
-          <label>その他経費
-            <input id="sessionExpenses" type="number" inputmode="decimal" min="0" step="0.01" value="0">
-          </label>
-          <label>基準通貨への換算レート
-            <input id="sessionFx" type="number" inputmode="decimal" min="0" step="0.0001" value="1">
-            <small id="fxHint" class="hint">1 現地通貨 = 1 円</small>
-          </label>
-        </div>
+        <section class="session-expense-panel">
+          <div class="section-head compact-head">
+            <div>
+              <p class="eyebrow">EXPENSES</p>
+              <h3>経費内訳</h3>
+            </div>
+            <span id="sessionExpenseTotal" class="summary-badge">合計 0</span>
+          </div>
+          <input id="sessionExpenses" type="hidden" value="0">
+          <div class="session-expense-grid">
+            <label>交通
+              <input id="expenseTransport" type="number" inputmode="decimal" min="0" step="0.01" value="0">
+            </label>
+            <label>飲食
+              <input id="expenseFood" type="number" inputmode="decimal" min="0" step="0.01" value="0">
+            </label>
+            <label>宿泊
+              <input id="expenseLodging" type="number" inputmode="decimal" min="0" step="0.01" value="0">
+            </label>
+            <label>チップ
+              <input id="expenseTips" type="number" inputmode="decimal" min="0" step="0.01" value="0">
+            </label>
+            <label>その他
+              <input id="expenseOther" type="number" inputmode="decimal" min="0" step="0.01" value="0">
+            </label>
+          </div>
+        </section>
+
+        <label>基準通貨への換算レート
+          <input id="sessionFx" type="number" inputmode="decimal" min="0" step="0.0001" value="1">
+          <small id="fxHint" class="hint">1 現地通貨 = 1 円</small>
+        </label>
 
         <div id="sessionChipModeField">
           <label>店舗チップの扱い
@@ -241,6 +309,17 @@
           </label>
         </div>
         <div id="sessionList" class="card-list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">STAKE PERFORMANCE</p>
+            <h2>ステークス別成績</h2>
+          </div>
+          <span id="stakeStatsSummary" class="summary-badge">リング0件</span>
+        </div>
+        <div id="stakeStatsTable" class="analytics-table"></div>
       </section>
     </section>
 
@@ -865,7 +944,7 @@
         <button id="saveSettingsBtn" class="secondary" type="button">基本設定を保存</button>
         <button id="settingsVersionRow" class="app-info-line app-info-button" type="button" aria-haspopup="dialog" aria-controls="versionHistoryModal">
           <span>アプリバージョン</span>
-          <strong id="settingsVersion">v5.2.1 <span aria-hidden="true">›</span></strong>
+          <strong id="settingsVersion">v6.0.0 <span aria-hidden="true">›</span></strong>
         </button>
       </section>
 
@@ -932,7 +1011,7 @@
     <div class="current-version-card">
       <div>
         <span class="current-version-label">現在のバージョン</span>
-        <strong id="currentVersionInModal">v5.2.1</strong>
+        <strong id="currentVersionInModal">v6.0.0</strong>
       </div>
       <span class="up-to-date-badge">最新版</span>
     </div>
@@ -1009,7 +1088,7 @@
   </nav>
 
   <div id="toast" class="toast" role="status"></div>
-  <script src="./core-utils.js?v=5.2.1"></script>
-  <script src="./app.js?v=5.2.1"></script>
+  <script src="./core-utils.js?v=6.0.0"></script>
+  <script src="./app.js?v=6.0.0"></script>
 </body>
 </html>

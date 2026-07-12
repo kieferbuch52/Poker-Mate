@@ -1,11 +1,27 @@
 'use strict';
 
-const APP_VERSION = '5.2.1';
+const APP_VERSION = '6.0.0';
 const APP_CHANGELOG = [
+  {
+    version:'6.0.0',
+    title:'収支分析とセッション計測の拡張',
+    current:true,
+    changes:[
+      '開始・一時停止・再開・終了に対応したセッションタイマーを追加',
+      '開始時刻・終了時刻と日またぎのプレー時間計算を追加',
+      '経費を交通・飲食・宿泊・チップ・その他に分類',
+      'リングのステークス別成績を追加',
+      '店舗別に勝率・平均時間・最大勝ち負け・直近10回を追加',
+      'MTTのITM率・FT率・優勝回数・ABI・リエントリー率を追加',
+      '現在のドローダウンと最大ドローダウンを追加',
+      '月次・年次レポートを追加',
+      '保存データをスキーマv6へ移行'
+    ]
+  },
   {
     version:'5.2.1',
     title:'アウツ代表例と勝率ラベル配置の修正',
-    current:true,
+    current:false,
     changes:[
       'アウツ候補を画像の代表例8種類へ変更',
       'ドロー候補を複数選択から単一選択へ変更',
@@ -233,7 +249,7 @@ const APP_CHANGELOG = [
 ];
 const STORAGE_KEY = 'pokerMateDataV1';
 const AUTO_BACKUP_KEY = 'pokerMateAutoBackupsV1';
-const DATA_SCHEMA_VERSION = 5;
+const DATA_SCHEMA_VERSION = 6;
 const AUTO_BACKUP_INTERVAL_MS = 24*60*60*1000;
 const ranks = ['A','K','Q','J','T','9','8','7','6','5','4','3','2'];
 const cardSuits = [{key:'s',symbol:'♠'},{key:'h',symbol:'♥'},{key:'d',symbol:'♦'},{key:'c',symbol:'♣'}];
@@ -457,7 +473,9 @@ function loadUiState(){
     tournamentStack:'25',
     rangeMode:'rfi',
     rangePosition:'UTG',
-    oddsMode:'bet'
+    oddsMode:'bet',
+    reportMode:'month',
+    reportPeriod:''
   };
   try{
     const parsed=JSON.parse(localStorage.getItem(UI_STORAGE_KEY));
@@ -580,6 +598,27 @@ function renderRingStakeSettings(){
   initializeRingStakeDragAndDrop();
 }
 
+
+const EXPENSE_KEYS=['transport','food','lodging','tips','other'];
+function normalizeExpenseBreakdown(value,fallback=0){
+  const source=value&&typeof value==='object'?value:{};
+  return {
+    transport:Math.max(0,num(source.transport)),
+    food:Math.max(0,num(source.food)),
+    lodging:Math.max(0,num(source.lodging)),
+    tips:Math.max(0,num(source.tips)),
+    other:Math.max(0,num(source.other!==undefined?source.other:fallback))
+  };
+}
+function expenseBreakdownTotal(value){
+  const normalized=normalizeExpenseBreakdown(value,0);
+  return EXPENSE_KEYS.reduce((sum,key)=>sum+num(normalized[key]),0);
+}
+function normalizeClockTime(value){
+  const text=String(value||'');
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(text)?text:'';
+}
+
 function initialState(){
   const now=new Date().toISOString();
   return {
@@ -596,16 +635,24 @@ function initialState(){
 }
 function validId(value){return typeof value==='string'&&value.trim().length>0;}
 function normalizedId(value){return validId(value)?value.trim():uid();}
-function migrateToSchema5(source){
+function migrateToCurrentSchema(source){
   const migrated={...source};
   const oldSchema=num(source.schemaVersion||source.version||1);
-  const sessions=Array.isArray(source.sessions)?source.sessions.map(session=>({
-    ...session,
-    id:normalizedId(session.id),
-    chipMode:session.chipMode||(session.reflected?'stored':'cash'),
-    chipDelta:num(session.chipDelta),
-    reflected:Boolean(session.reflected||session.chipMode==='stored'||session.chipMode==='purchase')
-  })):[];
+  const sessions=Array.isArray(source.sessions)?source.sessions.map(session=>{
+    const expenseBreakdown=normalizeExpenseBreakdown(session.expenseBreakdown,session.expenses);
+    return {
+      ...session,
+      id:normalizedId(session.id),
+      chipMode:session.chipMode||(session.reflected?'stored':'cash'),
+      chipDelta:num(session.chipDelta),
+      reflected:Boolean(session.reflected||session.chipMode==='stored'||session.chipMode==='purchase'),
+      startTime:normalizeClockTime(session.startTime),
+      endTime:normalizeClockTime(session.endTime),
+      reentryCount:Math.max(0,Math.floor(num(session.reentryCount))),
+      expenseBreakdown,
+      expenses:expenseBreakdownTotal(expenseBreakdown)
+    };
+  }):[];
   const chipTransactions=Array.isArray(source.chipTransactions)?source.chipTransactions.map(tx=>({
     ...tx,id:normalizedId(tx.id),source:tx.source||'manual',sessionId:tx.sessionId||''
   })):[];
@@ -635,7 +682,7 @@ function migrateToSchema5(source){
 }
 function normalizeState(raw){
   const base=initialState();
-  const source=migrateToSchema5(raw&&typeof raw==='object'?raw:{});
+  const source=migrateToCurrentSchema(raw&&typeof raw==='object'?raw:{});
   const venueIds=new Set();
   const venues=(Array.isArray(source.venues)?source.venues:[]).map(venue=>{
     let id=normalizedId(venue.id);while(venueIds.has(id))id=uid();venueIds.add(id);
@@ -649,7 +696,14 @@ function normalizeState(raw){
   const sessions=(Array.isArray(source.sessions)?source.sessions:[]).map(session=>{
     let id=normalizedId(session.id);while(sessionIds.has(id))id=uid();sessionIds.add(id);
     const chipMode=['stored','cash','purchase'].includes(session.chipMode)?session.chipMode:(session.reflected?'stored':'cash');
-    return {...session,id,chipMode,reflected:chipMode!=='cash',chipDelta:num(session.chipDelta),createdAt:num(session.createdAt)||Date.now()};
+    const expenseBreakdown=normalizeExpenseBreakdown(session.expenseBreakdown,session.expenses);
+    return {
+      ...session,id,chipMode,reflected:chipMode!=='cash',chipDelta:num(session.chipDelta),
+      startTime:normalizeClockTime(session.startTime),endTime:normalizeClockTime(session.endTime),
+      reentryCount:Math.max(0,Math.floor(num(session.reentryCount))),
+      expenseBreakdown,expenses:expenseBreakdownTotal(expenseBreakdown),
+      createdAt:num(session.createdAt)||Date.now()
+    };
   });
   const txIds=new Set();
   const chipTransactions=(Array.isArray(source.chipTransactions)?source.chipTransactions:[]).map(tx=>{
@@ -751,7 +805,18 @@ function auditStateData(subject){
   collections.forEach(([label,items])=>{const ids=new Set();items.forEach((item,index)=>{if(!validId(item.id))errors.push(`${label}${index+1}: IDがありません`);else if(ids.has(item.id))errors.push(`${label}: ID ${item.id} が重複しています`);else ids.add(item.id);});});
   const venueIds=new Set(subject.venues.map(v=>v.id));
   subject.venues.forEach(v=>{if(!v.name)errors.push('店舗名が空です');if(num(v.fxRate)<=0)errors.push(`${v.name||'店舗'}: 換算レートが0以下です`);if(num(v.openingChipBalance)<0)errors.push(`${v.name||'店舗'}: 導入時残高がマイナスです`);});
-  subject.sessions.forEach(s=>{if(!isValidDate(s.date))errors.push(`セッション ${s.id}: 日付が不正です`);if(!['cash','tournament'].includes(s.type))errors.push(`セッション ${s.id}: 種別が不正です`);if(s.venueId&&!venueIds.has(s.venueId))errors.push(`セッション ${s.id}: 存在しない店舗を参照しています`);if(num(s.fxRate)<=0)errors.push(`セッション ${s.id}: 換算レートが0以下です`);if(num(s.buyIn)<0||num(s.expenses)<0||num(s.hours)<0)errors.push(`セッション ${s.id}: 負の入力値があります`);if(s.type==='tournament'&&num(s.field)>0&&num(s.place)>num(s.field))errors.push(`セッション ${s.id}: 順位が参加人数を超えています`);});
+  subject.sessions.forEach(s=>{
+    if(!isValidDate(s.date))errors.push(`セッション ${s.id}: 日付が不正です`);
+    if(!['cash','tournament'].includes(s.type))errors.push(`セッション ${s.id}: 種別が不正です`);
+    if(s.venueId&&!venueIds.has(s.venueId))errors.push(`セッション ${s.id}: 存在しない店舗を参照しています`);
+    if(num(s.fxRate)<=0)errors.push(`セッション ${s.id}: 換算レートが0以下です`);
+    if(num(s.buyIn)<0||num(s.expenses)<0||num(s.hours)<0)errors.push(`セッション ${s.id}: 負の入力値があります`);
+    if(s.startTime&&!normalizeClockTime(s.startTime))errors.push(`セッション ${s.id}: 開始時刻が不正です`);
+    if(s.endTime&&!normalizeClockTime(s.endTime))errors.push(`セッション ${s.id}: 終了時刻が不正です`);
+    if(num(s.reentryCount)<0)errors.push(`セッション ${s.id}: リエントリー回数がマイナスです`);
+    if(EXPENSE_KEYS.some(key=>num(s.expenseBreakdown?.[key])<0))errors.push(`セッション ${s.id}: 経費内訳に負の値があります`);
+    if(s.type==='tournament'&&num(s.field)>0&&num(s.place)>num(s.field))errors.push(`セッション ${s.id}: 順位が参加人数を超えています`);
+  });
   subject.chipTransactions.forEach(tx=>{if(!venueIds.has(tx.venueId))errors.push(`チップ取引 ${tx.id}: 存在しない店舗を参照しています`);if(!isValidDate(tx.date))errors.push(`チップ取引 ${tx.id}: 日付が不正です`);if(!num(tx.amount))warnings.push(`チップ取引 ${tx.id}: 金額が0です`);if(tx.source==='session'&&tx.sessionId&&!subject.sessions.some(s=>s.id===tx.sessionId))errors.push(`チップ取引 ${tx.id}: セッション参照が不正です`);});
   subject.bankroll.transactions.forEach(tx=>{if(!isValidDate(tx.date))errors.push(`入出金 ${tx.id}: 日付が不正です`);if(!num(tx.amount))warnings.push(`入出金 ${tx.id}: 金額が0です`);});
   subject.venues.forEach(v=>{const balance=venueChipBalance(v.id,subject);if(balance<0)warnings.push(`${v.name}: チップ残高が ${fmtPoints(balance,v.currency)} です`);});
@@ -761,7 +826,12 @@ function validateSessionInput(){
   const form=document.getElementById('sessionForm');clearFormError(form);
   const date=document.getElementById('sessionDate');if(!isValidDate(date.value))return reportFormError(form,'日付を正しく入力してください。',date);
   const fx=document.getElementById('sessionFx');if(num(fx.value)<=0)return reportFormError(form,'換算レートは0より大きい値にしてください。',fx);
-  const expenses=document.getElementById('sessionExpenses');if(num(expenses.value)<0)return reportFormError(form,'経費は0以上にしてください。',expenses);
+  if(loadSessionTimer()){
+    return reportFormError(form,'セッションタイマーを終了してから保存してください。',document.getElementById('endSessionTimerBtn'));
+  }
+  const expenseFields=EXPENSE_FIELD_IDS.map(id=>document.getElementById(id));
+  const invalidExpense=expenseFields.find(field=>num(field.value)<0);
+  if(invalidExpense)return reportFormError(form,'経費は0以上にしてください。',invalidExpense);
   const venueId=document.getElementById('sessionVenue').value;
   if(currentSessionType==='cash'){
     const stakes=document.getElementById('cashStakes');if(!stakes.value)return reportFormError(form,'リングステークスを選択してください。',stakes);
@@ -770,7 +840,9 @@ function validateSessionInput(){
     const mode=document.getElementById('sessionChipMode').value;if(mode!=='cash'&&!venueId)return reportFormError(form,'店舗チップへ反映する場合は店舗を選択してください。',document.getElementById('sessionVenue'));
   }else{
     const buyIn=document.getElementById('tournamentBuyIn');if(num(buyIn.value)<=0)return reportFormError(form,'トーナメントのバイインは0より大きい値にしてください。',buyIn);
-    const field=num(document.getElementById('tournamentField').value),place=num(document.getElementById('tournamentPlace').value);if(field>0&&place>field)return reportFormError(form,'順位は参加人数以下にしてください。',document.getElementById('tournamentPlace'));
+    const field=num(document.getElementById('tournamentField').value),place=num(document.getElementById('tournamentPlace').value);
+    if(field>0&&place>field)return reportFormError(form,'順位は参加人数以下にしてください。',document.getElementById('tournamentPlace'));
+    if(num(document.getElementById('tournamentReentryCount').value)<0)return reportFormError(form,'リエントリー回数は0以上にしてください。',document.getElementById('tournamentReentryCount'));
   }
   return true;
 }
@@ -778,6 +850,58 @@ function validateSessionInput(){
 function venueById(id){ return state.venues.find(v=>v.id===id); }
 function sessionProfitLocal(s){ return num(s.profitLocal); }
 function sessionProfitBase(s){ return num(s.profitBase); }
+
+function sortedSessions(list=state.sessions){
+  return [...list].sort((a,b)=>a.date.localeCompare(b.date)||num(a.createdAt)-num(b.createdAt));
+}
+function sessionWinRate(list){
+  return list.length?list.filter(session=>sessionProfitBase(session)>0).length/list.length*100:0;
+}
+function sessionExpenseBase(session){
+  return num(session.expenses)*num(session.fxRate);
+}
+function sessionDrawdown(list=state.sessions){
+  return PokerCore.calculateDrawdown(sortedSessions(list).map(sessionProfitBase));
+}
+function tournamentStats(list){
+  const tournaments=list.filter(session=>session.type==='tournament');
+  const events=tournaments.length;
+  const entries=events+tournaments.reduce((sum,session)=>sum+num(session.reentryCount),0);
+  const buyInTotal=tournaments.reduce((sum,session)=>sum+num(session.buyIn)+num(session.reentry),0);
+  const costTotal=tournaments.reduce((sum,session)=>sum+num(session.costLocal)*num(session.fxRate),0);
+  const profit=tournaments.reduce((sum,session)=>sum+sessionProfitBase(session),0);
+  const itm=tournaments.filter(session=>num(session.prize)>0).length;
+  const finalTables=tournaments.filter(session=>num(session.place)>0&&num(session.place)<=9).length;
+  const wins=tournaments.filter(session=>num(session.place)===1).length;
+  const reentered=tournaments.filter(session=>num(session.reentryCount)>0).length;
+  const fieldValues=tournaments.map(session=>num(session.field)).filter(Boolean);
+  return {
+    tournaments,events,entries,profit,
+    roi:costTotal?profit/costTotal*100:0,
+    itmRate:events?itm/events*100:0,
+    finalTableRate:events?finalTables/events*100:0,
+    wins,
+    abi:entries?buyInTotal/entries:0,
+    reentryRate:events?reentered/events*100:0,
+    averageField:fieldValues.length?fieldValues.reduce((sum,value)=>sum+value,0)/fieldValues.length:0
+  };
+}
+function performanceStats(list){
+  const profit=list.reduce((sum,session)=>sum+sessionProfitBase(session),0);
+  const hours=list.reduce((sum,session)=>sum+num(session.hours),0);
+  const expenses=list.reduce((sum,session)=>sum+sessionExpenseBase(session),0);
+  const cash=list.filter(session=>session.type==='cash');
+  const cashHours=cash.reduce((sum,session)=>sum+num(session.hours),0);
+  const cashProfit=cash.reduce((sum,session)=>sum+sessionProfitBase(session),0);
+  return {
+    list,profit,hours,expenses,
+    winRate:sessionWinRate(list),
+    cashHourly:cashHours?cashProfit/cashHours:0,
+    drawdown:sessionDrawdown(list),
+    tournament:tournamentStats(list)
+  };
+}
+
 function showToast(msg){
   const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show');
   clearTimeout(showToast.t); showToast.t=setTimeout(()=>el.classList.remove('show'),1800);
@@ -854,6 +978,7 @@ function renderHome(){
     profit:state.sessions.filter(s=>s.venueId===venue.id).reduce((sum,s)=>sum+sessionProfitBase(s),0)
   })).sort((a,b)=>b.profit-a.profit);
   const bestVenue=venuePerformance.find(item=>state.sessions.some(s=>s.venueId===item.venue.id));
+  const drawdown=sessionDrawdown();
 
   document.getElementById('heroProfit').textContent=signed(total,state.settings.baseCurrency);
   document.getElementById('heroProfit').className=`hero-number ${total>=0?'positive':'negative'}`;
@@ -871,7 +996,9 @@ function renderHome(){
     <article class="insight-card"><span>現在のバンクロール</span><strong class="${bankroll>=0?'positive':'negative'}">${fmt(bankroll,state.settings.baseCurrency)}</strong><small>開始資金・収支・入出金</small></article>
     <article class="insight-card"><span>店舗チップ総額</span><strong>${fmt(chipValue,state.settings.baseCurrency)}</strong><small>総資産の内訳（足し算不要）</small></article>
     <article class="insight-card"><span>今月の収支</span><strong class="${monthProfit>=0?'positive':'negative'}">${signed(monthProfit,state.settings.baseCurrency)}</strong><small>${monthSessions.length}セッション</small></article>
-    <article class="insight-card"><span>好成績の店舗</span><strong>${bestVenue?esc(bestVenue.venue.name):'—'}</strong><small>${bestVenue?signed(bestVenue.profit,state.settings.baseCurrency):'データなし'}</small></article>`;
+    <article class="insight-card"><span>好成績の店舗</span><strong>${bestVenue?esc(bestVenue.venue.name):'—'}</strong><small>${bestVenue?signed(bestVenue.profit,state.settings.baseCurrency):'データなし'}</small></article>
+    <article class="insight-card"><span>ピークからの下落</span><strong class="${drawdown.currentDrawdown?'negative':''}">${drawdown.currentDrawdown?`-${fmt(drawdown.currentDrawdown,state.settings.baseCurrency)}`:fmt(0,state.settings.baseCurrency)}</strong><small>現在のドローダウン</small></article>
+    <article class="insight-card"><span>最大ドローダウン</span><strong class="${drawdown.maxDrawdown?'negative':''}">${drawdown.maxDrawdown?`-${fmt(drawdown.maxDrawdown,state.settings.baseCurrency)}`:fmt(0,state.settings.baseCurrency)}</strong><small>全期間の最大下落幅</small></article>`;
 
   const setupItems=[];
   if(!state.venues.length)setupItems.push({label:'店舗を登録',action:'venue-setup'});
@@ -891,9 +1018,102 @@ function renderHome(){
   wrap.innerHTML=recent.length?recent.map(sessionCardHtml).join(''):'<div class="empty-state"><strong>最初のセッションを記録しましょう</strong><p>ホームの「収支を記録」からすぐ始められます。</p></div>';
 
   document.getElementById('graphPeriod').value=uiState.graphPeriod||'30';
+  renderPerformanceReport();
   drawProfitChart();
   updateLossLimitStatus();
 }
+
+function reportPeriodValues(mode){
+  const values=new Set(state.sessions.map(session=>mode==='year'?String(session.date||'').slice(0,4):String(session.date||'').slice(0,7)).filter(Boolean));
+  const current=mode==='year'?today().slice(0,4):today().slice(0,7);
+  values.add(current);
+  return [...values].sort().reverse();
+}
+function reportPeriodLabel(value,mode){
+  if(mode==='year')return `${value}年`;
+  const [year,month]=value.split('-');
+  return `${year}年${Number(month)}月`;
+}
+function renderReportPeriodOptions(){
+  const mode=document.getElementById('reportMode').value||uiState.reportMode||'month';
+  const select=document.getElementById('reportPeriod');
+  const values=reportPeriodValues(mode);
+  const preferred=uiState.reportPeriod&&values.includes(uiState.reportPeriod)
+    ?uiState.reportPeriod
+    :values[0];
+  select.innerHTML=values.map(value=>`<option value="${value}">${reportPeriodLabel(value,mode)}</option>`).join('');
+  select.value=preferred;
+  updateUiState({reportMode:mode,reportPeriod:preferred});
+}
+function reportSessionsForSelection(){
+  const mode=document.getElementById('reportMode').value;
+  const period=document.getElementById('reportPeriod').value;
+  return state.sessions.filter(session=>mode==='year'
+    ?String(session.date||'').startsWith(period)
+    :String(session.date||'').slice(0,7)===period);
+}
+function renderPerformanceReport(){
+  const modeSelect=document.getElementById('reportMode');
+  const periodSelect=document.getElementById('reportPeriod');
+  if(!modeSelect||!periodSelect)return;
+  modeSelect.value=uiState.reportMode||'month';
+  renderReportPeriodOptions();
+  const list=reportSessionsForSelection();
+  const stats=performanceStats(list);
+  const mtt=stats.tournament;
+  const venueGroups=state.venues.map(venue=>({
+    venue,
+    sessions:list.filter(session=>session.venueId===venue.id)
+  })).filter(group=>group.sessions.length).map(group=>({
+    ...group,
+    profit:group.sessions.reduce((sum,session)=>sum+sessionProfitBase(session),0)
+  })).sort((a,b)=>b.profit-a.profit);
+  const bestVenue=venueGroups[0];
+
+  document.getElementById('reportSummary').innerHTML=`
+    <article><span>収支</span><strong class="${stats.profit>=0?'positive':'negative'}">${signed(stats.profit,state.settings.baseCurrency)}</strong></article>
+    <article><span>セッション</span><strong>${list.length}</strong></article>
+    <article><span>プレー時間</span><strong>${stats.hours.toFixed(1)}h</strong></article>
+    <article><span>勝ちセッション率</span><strong>${list.length?pct(stats.winRate):'—'}</strong></article>
+    <article><span>リング時給</span><strong>${list.some(session=>session.type==='cash')?fmt(stats.cashHourly,state.settings.baseCurrency):'—'}</strong></article>
+    <article><span>経費</span><strong>${fmt(stats.expenses,state.settings.baseCurrency)}</strong></article>
+    <article><span>最大DD</span><strong class="${stats.drawdown.maxDrawdown?'negative':''}">${stats.drawdown.maxDrawdown?`-${fmt(stats.drawdown.maxDrawdown,state.settings.baseCurrency)}`:fmt(0,state.settings.baseCurrency)}</strong></article>
+    <article><span>好成績店舗</span><strong>${bestVenue?esc(bestVenue.venue.name):'—'}</strong></article>`;
+
+  document.getElementById('reportBreakdown').innerHTML=`
+    <div class="report-section">
+      <h3>トーナメント統計</h3>
+      <div class="tournament-report-grid">
+        <div><span>MTT回数</span><strong>${mtt.events}</strong></div>
+        <div><span>ROI</span><strong>${mtt.events?pct(mtt.roi):'—'}</strong></div>
+        <div><span>ITM率</span><strong>${mtt.events?pct(mtt.itmRate):'—'}</strong></div>
+        <div><span>FT率</span><strong>${mtt.events?pct(mtt.finalTableRate):'—'}</strong></div>
+        <div><span>優勝</span><strong>${mtt.wins}</strong></div>
+        <div><span>ABI</span><strong>${mtt.entries?fmt(mtt.abi,state.settings.baseCurrency):'—'}</strong></div>
+        <div><span>リエントリー率</span><strong>${mtt.events?pct(mtt.reentryRate):'—'}</strong></div>
+        <div><span>平均参加人数</span><strong>${mtt.averageField?mtt.averageField.toFixed(1):'—'}</strong></div>
+      </div>
+    </div>
+    <div class="report-section">
+      <h3>種別内訳</h3>
+      <div class="report-type-list">
+        ${['cash','tournament'].map(type=>{
+          const sessions=list.filter(session=>session.type===type);
+          const profit=sessions.reduce((sum,session)=>sum+sessionProfitBase(session),0);
+          return `<div><span>${type==='cash'?'リング':'トーナメント'}・${sessions.length}件</span><strong class="${profit>=0?'positive':'negative'}">${signed(profit,state.settings.baseCurrency)}</strong></div>`;
+        }).join('')}
+      </div>
+    </div>`;
+}
+document.getElementById('reportMode').addEventListener('change',()=>{
+  updateUiState({reportMode:document.getElementById('reportMode').value,reportPeriod:''});
+  renderPerformanceReport();
+});
+document.getElementById('reportPeriod').addEventListener('change',()=>{
+  updateUiState({reportPeriod:document.getElementById('reportPeriod').value});
+  renderPerformanceReport();
+});
+
 function drawProfitChart(){
   const filter=document.getElementById('graphFilter').value;
   const period=document.getElementById('graphPeriod').value;
@@ -972,6 +1192,131 @@ function updateFxFromVenue(){
 }
 document.getElementById('sessionVenue').addEventListener('change',updateFxFromVenue);
 
+
+const EXPENSE_FIELD_IDS=['expenseTransport','expenseFood','expenseLodging','expenseTips','expenseOther'];
+const SESSION_TIMER_KEY='pokerMateSessionTimerV1';
+
+function currentExpenseBreakdown(){
+  return {
+    transport:num(document.getElementById('expenseTransport').value),
+    food:num(document.getElementById('expenseFood').value),
+    lodging:num(document.getElementById('expenseLodging').value),
+    tips:num(document.getElementById('expenseTips').value),
+    other:num(document.getElementById('expenseOther').value)
+  };
+}
+function updateExpenseTotal(){
+  const total=expenseBreakdownTotal(currentExpenseBreakdown());
+  document.getElementById('sessionExpenses').value=total;
+  const venue=venueById(document.getElementById('sessionVenue').value);
+  document.getElementById('sessionExpenseTotal').textContent=`合計 ${fmtPoints(total,venue?.currency||'')}`;
+  updateSessionPreview();
+}
+EXPENSE_FIELD_IDS.forEach(id=>{
+  document.getElementById(id).addEventListener('input',updateExpenseTotal);
+  document.getElementById(id).addEventListener('change',updateExpenseTotal);
+});
+
+function localClockTime(date=new Date()){
+  return `${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+}
+function loadSessionTimer(){
+  try{
+    const value=JSON.parse(localStorage.getItem(SESSION_TIMER_KEY));
+    return value&&typeof value==='object'?value:null;
+  }catch(error){return null;}
+}
+function saveSessionTimer(value){
+  if(value)localStorage.setItem(SESSION_TIMER_KEY,JSON.stringify(value));
+  else localStorage.removeItem(SESSION_TIMER_KEY);
+}
+function timerElapsedMs(timer,now=Date.now()){
+  if(!timer)return 0;
+  return num(timer.accumulatedMs)+(timer.status==='running'?Math.max(0,now-num(timer.lastResumedAt)):0);
+}
+function formatTimerDuration(ms){
+  const totalSeconds=Math.floor(Math.max(0,ms)/1000);
+  const hours=Math.floor(totalSeconds/3600);
+  const minutes=Math.floor((totalSeconds%3600)/60);
+  const seconds=totalSeconds%60;
+  return `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
+}
+function timerHoursField(type){
+  return document.getElementById(type==='tournament'?'tournamentHours':'cashHours');
+}
+function renderSessionTimer(){
+  const timer=loadSessionTimer();
+  const active=Boolean(timer);
+  document.getElementById('sessionTimerDisplay').textContent=formatTimerDuration(timerElapsedMs(timer));
+  document.getElementById('sessionTimerStatus').textContent=!timer
+    ?'タイマー未開始'
+    :timer.status==='paused'
+      ?'一時停止中'
+      :'計測中';
+  document.getElementById('startSessionTimerBtn').disabled=active;
+  document.getElementById('pauseSessionTimerBtn').classList.toggle('hidden',!timer||timer.status!=='running');
+  document.getElementById('resumeSessionTimerBtn').classList.toggle('hidden',!timer||timer.status!=='paused');
+  document.getElementById('endSessionTimerBtn').disabled=!active;
+}
+function startSessionTimer(){
+  const now=new Date();
+  const timer={
+    status:'running',
+    startedAt:now.getTime(),
+    lastResumedAt:now.getTime(),
+    accumulatedMs:0,
+    sessionType:currentSessionType
+  };
+  saveSessionTimer(timer);
+  document.getElementById('sessionDate').value=today();
+  document.getElementById('sessionStartTime').value=localClockTime(now);
+  document.getElementById('sessionEndTime').value='';
+  renderSessionTimer();
+  showToast('セッション計測を開始しました');
+}
+function pauseSessionTimer(){
+  const timer=loadSessionTimer();if(!timer||timer.status!=='running')return;
+  timer.accumulatedMs=timerElapsedMs(timer);
+  timer.status='paused';
+  timer.lastResumedAt=0;
+  saveSessionTimer(timer);
+  renderSessionTimer();
+}
+function resumeSessionTimer(){
+  const timer=loadSessionTimer();if(!timer||timer.status!=='paused')return;
+  timer.status='running';
+  timer.lastResumedAt=Date.now();
+  saveSessionTimer(timer);
+  renderSessionTimer();
+}
+function endSessionTimer(){
+  const timer=loadSessionTimer();if(!timer)return;
+  const now=new Date();
+  const elapsed=timerElapsedMs(timer,now.getTime());
+  if(currentSessionType!==timer.sessionType)setSessionType(timer.sessionType);
+  document.getElementById('sessionEndTime').value=localClockTime(now);
+  timerHoursField(timer.sessionType).value=stripNumberZeros(elapsed/3600000,2);
+  saveSessionTimer(null);
+  renderSessionTimer();
+  updateSessionPreview();
+  showToast('計測時間をプレー時間へ反映しました');
+}
+function syncHoursFromClockTimes(){
+  const start=document.getElementById('sessionStartTime').value;
+  const end=document.getElementById('sessionEndTime').value;
+  if(!start||!end)return;
+  const hours=PokerCore.calculateDurationHours(start,end);
+  timerHoursField(currentSessionType).value=stripNumberZeros(hours,2);
+  updateSessionPreview();
+}
+document.getElementById('startSessionTimerBtn').addEventListener('click',startSessionTimer);
+document.getElementById('pauseSessionTimerBtn').addEventListener('click',pauseSessionTimer);
+document.getElementById('resumeSessionTimerBtn').addEventListener('click',resumeSessionTimer);
+document.getElementById('endSessionTimerBtn').addEventListener('click',endSessionTimer);
+document.getElementById('sessionStartTime').addEventListener('change',syncHoursFromClockTimes);
+document.getElementById('sessionEndTime').addEventListener('change',syncHoursFromClockTimes);
+setInterval(renderSessionTimer,1000);
+
 function calculateFormProfit(){
   const expenses=num(document.getElementById('sessionExpenses').value);
   if(currentSessionType==='cash'){
@@ -1029,6 +1374,11 @@ function resetSessionForm(){
   document.getElementById('sessionId').value='';
   document.getElementById('sessionDate').value=today();
   document.getElementById('sessionExpenses').value=0;
+  EXPENSE_FIELD_IDS.forEach(id=>document.getElementById(id).value=0);
+  document.getElementById('sessionExpenseTotal').textContent='合計 0';
+  document.getElementById('sessionStartTime').value='';
+  document.getElementById('sessionEndTime').value='';
+  document.getElementById('tournamentReentryCount').value=0;
   document.getElementById('tournamentReentry').value=0;
   document.getElementById('tournamentPrize').value=0;
   document.getElementById('sessionChipMode').value='stored';
@@ -1061,6 +1411,9 @@ document.getElementById('sessionForm').addEventListener('submit',e=>{
   const session={
     id:sessionId,type:currentSessionType,date:document.getElementById('sessionDate').value,
     venueId,fxRate:fx,expenses:num(document.getElementById('sessionExpenses').value),
+    expenseBreakdown:currentExpenseBreakdown(),
+    startTime:document.getElementById('sessionStartTime').value,
+    endTime:document.getElementById('sessionEndTime').value,
     notes:document.getElementById('sessionNotes').value.trim(),profitLocal:calc.profit,
     profitBase:calc.profit*fx,costLocal:calc.cost,chipMode,chipDelta:chipMode==='cash'?0:calc.chipDelta,reflected:chipMode!=='cash',
     createdAt:old?.createdAt||Date.now(),updatedAt:Date.now(),
@@ -1072,6 +1425,7 @@ document.getElementById('sessionForm').addEventListener('submit',e=>{
     field:currentSessionType==='tournament'?num(document.getElementById('tournamentField').value):0,
     place:currentSessionType==='tournament'?num(document.getElementById('tournamentPlace').value):0,
     reentry:currentSessionType==='tournament'?num(document.getElementById('tournamentReentry').value):0,
+    reentryCount:currentSessionType==='tournament'?Math.max(0,Math.floor(num(document.getElementById('tournamentReentryCount').value))):0,
     prize:currentSessionType==='tournament'?num(document.getElementById('tournamentPrize').value):0
   };
   state.chipTransactions=state.chipTransactions.filter(tx=>!(tx.source==='session'&&tx.sessionId===sessionId));
@@ -1087,8 +1441,10 @@ document.getElementById('sessionForm').addEventListener('submit',e=>{
 function sessionCardHtml(s){
   const v=venueById(s.venueId),currency=v?.currency||'LOCAL';
   const title=s.type==='cash'?(s.stakes||'リング'):(s.tournamentName||'トーナメント');
-  const detail=s.type==='cash'?`${num(s.hours).toFixed(1)}h・Buy ${fmtPoints(s.buyIn,currency)} → ${fmtPoints(s.cashOut,currency)}`:
-    `${s.place?`${s.place}位`:'順位未入力'}${s.field?` / ${s.field}人`:''}・費用 ${fmtPoints(s.costLocal,currency)}`;
+  const clock=s.startTime||s.endTime?`${s.startTime||'--:--'}–${s.endTime||'--:--'}・`:'';
+  const detail=s.type==='cash'
+    ?`${clock}${num(s.hours).toFixed(1)}h・Buy ${fmtPoints(s.buyIn,currency)} → ${fmtPoints(s.cashOut,currency)}`
+    :`${clock}${s.place?`${s.place}位`:'順位未入力'}${s.field?` / ${s.field}人`:''}・費用 ${fmtPoints(s.costLocal,currency)}${num(s.reentryCount)?`・Re ${num(s.reentryCount)}回`:''}`;
   return `<article class="log-card">
     <div class="log-top"><div><strong>${esc(title)}</strong><div class="log-meta">${esc(s.date)}・${esc(v?.name||'店舗未登録')}<br>${esc(detail)}</div></div>
     <div class="log-profit ${s.profitLocal>=0?'positive':'negative'}">${signedPoints(s.profitLocal,currency)}</div></div>
@@ -1103,6 +1459,38 @@ function renderSessionVenueFilter(){
   select.innerHTML=`<option value="all">すべての店舗</option>${state.venues.map(v=>`<option value="${esc(v.id)}">${esc(v.name)}</option>`).join('')}`;
   select.value=previous==='all'||state.venues.some(v=>v.id===previous)?previous:'all';
 }
+
+function renderStakeStats(){
+  const cash=state.sessions.filter(session=>session.type==='cash'&&session.stakes);
+  document.getElementById('stakeStatsSummary').textContent=`リング${cash.length}件`;
+  const groups=new Map();
+  cash.forEach(session=>{
+    if(!groups.has(session.stakes))groups.set(session.stakes,[]);
+    groups.get(session.stakes).push(session);
+  });
+  const configured=normalizeRingStakes(state.settings.ringStakes);
+  const order=value=>{
+    const index=configured.indexOf(value);
+    return index>=0?index:configured.length+100;
+  };
+  const rows=[...groups.entries()].sort((a,b)=>order(a[0])-order(b[0])||a[0].localeCompare(b[0]));
+  document.getElementById('stakeStatsTable').innerHTML=rows.length
+    ?`<div class="analytics-row analytics-header"><span>ステークス</span><span>回数</span><span>時間</span><span>勝率</span><span>時給</span><strong>収支</strong></div>`+
+      rows.map(([stakes,sessions])=>{
+        const hours=sessions.reduce((sum,session)=>sum+num(session.hours),0);
+        const profit=sessions.reduce((sum,session)=>sum+sessionProfitBase(session),0);
+        return `<div class="analytics-row">
+          <span>${esc(formatStakeValue(stakes))}</span>
+          <span>${sessions.length}</span>
+          <span>${hours.toFixed(1)}h</span>
+          <span>${pct(sessionWinRate(sessions))}</span>
+          <span>${hours?fmt(profit/hours,state.settings.baseCurrency):'—'}</span>
+          <strong class="${profit>=0?'positive':'negative'}">${signed(profit,state.settings.baseCurrency)}</strong>
+        </div>`;
+      }).join('')
+    :'<div class="empty-state"><strong>リングの記録がありません</strong><p>ステークス別の回数・時給・勝率・収支を表示します。</p></div>';
+}
+
 function renderSessions(){
   renderVenueOptions();
   renderRingStakeOptions(document.getElementById('cashStakes').value);
@@ -1126,6 +1514,7 @@ function renderSessions(){
   document.getElementById('sessionList').innerHTML=list.length
     ?list.map(sessionCardHtml).join('')
     :'<div class="empty-state"><strong>条件に合う履歴がありません</strong><p>検索条件を変更してください。</p></div>';
+  renderStakeStats();
 }
 ['sessionListFilter','sessionVenueFilter'].forEach(id=>document.getElementById(id).addEventListener('change',renderSessions));
 document.getElementById('sessionSearch').addEventListener('input',renderSessions);
@@ -1148,7 +1537,17 @@ function editSession(id){
   setSessionType(s.type);
   document.getElementById('sessionId').value=s.id;document.getElementById('sessionDate').value=s.date;
   document.getElementById('sessionVenue').value=s.venueId||'';document.getElementById('sessionFx').value=s.fxRate||1;
-  document.getElementById('sessionExpenses').value=s.expenses||0;document.getElementById('sessionNotes').value=s.notes||'';
+  const expenseBreakdown=normalizeExpenseBreakdown(s.expenseBreakdown,s.expenses);
+  document.getElementById('sessionExpenses').value=expenseBreakdownTotal(expenseBreakdown);
+  document.getElementById('expenseTransport').value=expenseBreakdown.transport||0;
+  document.getElementById('expenseFood').value=expenseBreakdown.food||0;
+  document.getElementById('expenseLodging').value=expenseBreakdown.lodging||0;
+  document.getElementById('expenseTips').value=expenseBreakdown.tips||0;
+  document.getElementById('expenseOther').value=expenseBreakdown.other||0;
+  document.getElementById('sessionExpenseTotal').textContent=`合計 ${fmtPoints(expenseBreakdownTotal(expenseBreakdown),venueById(s.venueId)?.currency||'')}`;
+  document.getElementById('sessionStartTime').value=s.startTime||'';
+  document.getElementById('sessionEndTime').value=s.endTime||'';
+  document.getElementById('sessionNotes').value=s.notes||'';
   document.getElementById('sessionChipMode').value=s.chipMode||(s.reflected?'stored':'cash');
   updateSessionChipModeHint();
   if(s.type==='cash'){
@@ -1158,7 +1557,10 @@ function editSession(id){
   }else{
     document.getElementById('tournamentName').value=s.tournamentName||'';document.getElementById('tournamentField').value=s.field||'';
     document.getElementById('tournamentPlace').value=s.place||'';document.getElementById('tournamentHours').value=s.hours||'';
-    document.getElementById('tournamentBuyIn').value=s.buyIn||0;document.getElementById('tournamentReentry').value=s.reentry||0;document.getElementById('tournamentPrize').value=s.prize||0;
+    document.getElementById('tournamentBuyIn').value=s.buyIn||0;
+    document.getElementById('tournamentReentryCount').value=s.reentryCount||0;
+    document.getElementById('tournamentReentry').value=s.reentry||0;
+    document.getElementById('tournamentPrize').value=s.prize||0;
   }
   document.getElementById('cancelEditBtn').classList.remove('hidden');document.getElementById('sessionSubmit').textContent='変更を保存';
   updateFxHintOnly();updateSessionPreview();window.scrollTo({top:0,behavior:'smooth'});
@@ -1340,6 +1742,22 @@ function renderVenues(){
       <div class="log-profit ${profit>=0?'positive':'negative'}">${signedPoints(profit,v.currency)}</div></div>
       <div class="balance">${fmtPoints(chipBalance,v.currency)}</div><div class="log-meta">台帳から自動計算（約 ${fmt(chipBalance*v.fxRate,state.settings.baseCurrency)}）</div>
       <div class="venue-stats"><div><strong>${sessions.length}</strong><span>セッション</span></div><div><strong>${hours?fmtPoints(cash.reduce((a,s)=>a+sessionProfitLocal(s),0)/hours,v.currency):'—'}</strong><span>リング時給</span></div><div><strong>${sessions.filter(s=>s.type==='tournament').length}</strong><span>MTT回数</span></div></div>
+      ${(()=>{
+        const wins=sessions.filter(session=>sessionProfitLocal(session)>0).length;
+        const avgHours=sessions.length?sessions.reduce((sum,session)=>sum+num(session.hours),0)/sessions.length:0;
+        const profits=sessions.map(sessionProfitLocal);
+        const maxWin=profits.length?Math.max(...profits):0;
+        const maxLoss=profits.length?Math.min(...profits):0;
+        const recent10=[...sessions].sort((a,b)=>b.date.localeCompare(a.date)||num(b.createdAt)-num(a.createdAt)).slice(0,10).reduce((sum,session)=>sum+sessionProfitLocal(session),0);
+        return `<div class="venue-analysis-grid">
+          <div><span>勝ち率</span><strong>${sessions.length?pct(wins/sessions.length*100):'—'}</strong></div>
+          <div><span>平均時間</span><strong>${sessions.length?`${avgHours.toFixed(1)}h`:'—'}</strong></div>
+          <div><span>最大勝ち</span><strong class="${maxWin>0?'positive':''}">${sessions.length?signedPoints(maxWin,v.currency):'—'}</strong></div>
+          <div><span>最大負け</span><strong class="${maxLoss<0?'negative':''}">${sessions.length?signedPoints(maxLoss,v.currency):'—'}</strong></div>
+          <div><span>直近10回</span><strong class="${recent10>=0?'positive':'negative'}">${sessions.length?signedPoints(recent10,v.currency):'—'}</strong></div>
+          <div><span>サンプル</span><strong>${sessions.length<5?'少':'有'}</strong></div>
+        </div>${sessions.length&&sessions.length<5?'<p class="sample-warning">5セッション未満のため参考値です。</p>':''}`;
+      })()}
       ${chipTx.length?`<div class="chip-flow-summary"><span>購入 ${fmtPoints(purchased,v.currency)}</span><span>換金 ${fmtPoints(cashedOut,v.currency)}</span></div>`:''}
       ${v.notes?`<p class="log-note">${esc(v.notes)}</p>`:''}
       <div class="venue-quick-actions">
@@ -2067,6 +2485,7 @@ function currentBankroll(){
 }
 function renderBankroll(){
   const b=state.bankroll,current=currentBankroll(),profit=bankrollSessionProfit(),adjustments=bankrollAdjustmentTotal();
+  const drawdown=sessionDrawdown();
   document.getElementById('bankrollCurrent').textContent=fmt(current,state.settings.baseCurrency);
   document.getElementById('bankrollCurrent').className=`bankroll-total ${current>=0?'positive':'negative'}`;
   const chipValue=state.venues.reduce((sum,venue)=>sum+venueChipValueBase(venue),0);
@@ -2101,6 +2520,14 @@ function renderBankroll(){
     <div class="bankroll-stat">
       <strong class="${adjustments>=0?'positive':'negative'}">${signed(adjustments,state.settings.baseCurrency)}</strong>
       <span>入出金合計</span>
+    </div>
+    <div class="bankroll-stat">
+      <strong class="${drawdown.currentDrawdown?'negative':''}">${drawdown.currentDrawdown?`-${fmt(drawdown.currentDrawdown,state.settings.baseCurrency)}`:fmt(0,state.settings.baseCurrency)}</strong>
+      <span>ピークからの下落</span>
+    </div>
+    <div class="bankroll-stat">
+      <strong class="${drawdown.maxDrawdown?'negative':''}">${drawdown.maxDrawdown?`-${fmt(drawdown.maxDrawdown,state.settings.baseCurrency)}`:fmt(0,state.settings.baseCurrency)}</strong>
+      <span>最大ドローダウン</span>
     </div>`;
 
   document.getElementById('bankrollStarting').value=b.startingAmount||0;
@@ -2165,6 +2592,7 @@ const NUMBER_INPUT_CONFIGS = {
   tournamentHours:{step:.25,presets:[1,2,3,4,6,8],suffix:'時間'},
   tournamentField:{step:1,presets:[6,9,18,27,45,90],suffix:'人'},
   tournamentPlace:{step:1,presets:[1,2,3,4,5,9],suffix:'位'},
+  tournamentReentryCount:{step:1,presets:[0,1,2,3,4,5],suffix:'回'},
   drawOuts:{step:1,presets:[4,6,8,9,12,15],suffix:'アウツ'},
   pnBehind:{step:1,presets:[1,2,3,4,5,6],suffix:'人'},
   bankrollCashTarget:{step:1,presets:[20,30,40,50,100],suffix:'BI'},
@@ -2187,7 +2615,8 @@ const NUMBER_INPUT_CONFIGS = {
 
 const MONEY_NUMBER_IDS = new Set([
   'cashBuyIn','cashOut','tournamentBuyIn','tournamentReentry','tournamentPrize',
-  'sessionExpenses','venueBalance','chipTransactionAmount','bankrollStarting',
+  'expenseTransport','expenseFood','expenseLodging','expenseTips','expenseOther',
+  'venueBalance','chipTransactionAmount','bankrollStarting',
   'bankrollCashBuyIn','bankrollTournamentBuyIn','bankrollTransactionAmount','lossLimit'
 ]);
 
@@ -2712,8 +3141,12 @@ document.getElementById('exportJsonBtn').addEventListener('click',()=>{
   downloadBlob(`poker-mate-backup-${today()}.json`,JSON.stringify(state,null,2),'application/json');renderBackupStatus();
 });
 document.getElementById('exportCsvBtn').addEventListener('click',()=>{
-  const header=['date','type','venue','currency','stakes_or_tournament','hours','profit_local','fx_rate','profit_base','notes'];
-  const rows=state.sessions.map(session=>{const venue=venueById(session.venueId);return [session.date,session.type,venue?.name||'',venue?.currency||'',session.type==='cash'?session.stakes:session.tournamentName,session.hours,session.profitLocal,session.fxRate,session.profitBase,session.notes];});
+  const header=['date','start_time','end_time','type','venue','currency','stakes_or_tournament','hours','reentry_count','expense_transport','expense_food','expense_lodging','expense_tips','expense_other','profit_local','fx_rate','profit_base','notes'];
+  const rows=state.sessions.map(session=>{
+    const venue=venueById(session.venueId);
+    const expenses=normalizeExpenseBreakdown(session.expenseBreakdown,session.expenses);
+    return [session.date,session.startTime||'',session.endTime||'',session.type,venue?.name||'',venue?.currency||'',session.type==='cash'?session.stakes:session.tournamentName,session.hours,session.reentryCount||0,expenses.transport,expenses.food,expenses.lodging,expenses.tips,expenses.other,session.profitLocal,session.fxRate,session.profitBase,session.notes];
+  });
   const csv=[header,...rows].map(row=>row.map(value=>`"${csvSafe(value).replace(/"/g,'""')}"`).join(',')).join('\n');
   downloadBlob(`poker-mate-sessions-${today()}.csv`,`\uFEFF${csv}`,'text/csv;charset=utf-8');
 });
