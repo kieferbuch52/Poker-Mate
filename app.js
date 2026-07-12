@@ -1,11 +1,26 @@
 'use strict';
 
-const APP_VERSION = '4.4.0';
+const APP_VERSION = '5.0.0';
 const APP_CHANGELOG = [
+  {
+    version:'5.0.0',
+    title:'データ信頼性と台帳構造の刷新',
+    current:true,
+    changes:[
+      '日付をUTCではなく端末の現地日付で保存するよう修正',
+      '店舗チップ残高を購入・換金・セッション台帳から自動計算する方式へ変更',
+      'セッション時のチップ資金源を保有チップ・現金・同時購入から選択可能に変更',
+      'データスキーマv5と旧データ自動移行を追加',
+      '保存前検証、インポート検証、データ整合性診断を追加',
+      '端末内自動バックアップと復元を追加',
+      'ハンド評価・オッズ・日付・チップ台帳の自動テストを追加',
+      'オッズ入力を1行へ圧縮し、共通のレイズ必要勝率表へ統一'
+    ]
+  },
   {
     version:'4.4.0',
     title:'PN画面圧縮とオッズ結果統一',
-    current:true,
+    current:false,
     changes:[
       'パワーナンバーの条件入力5項目をコンパクトな1〜2段へ整理',
       '自分のハンド選択を小型カード2枚の横並びへ変更',
@@ -182,6 +197,9 @@ const APP_CHANGELOG = [
   }
 ];
 const STORAGE_KEY = 'pokerMateDataV1';
+const AUTO_BACKUP_KEY = 'pokerMateAutoBackupsV1';
+const DATA_SCHEMA_VERSION = 5;
+const AUTO_BACKUP_INTERVAL_MS = 24*60*60*1000;
 const ranks = ['A','K','Q','J','T','9','8','7','6','5','4','3','2'];
 const cardSuits = [{key:'s',symbol:'♠'},{key:'h',symbol:'♥'},{key:'d',symbol:'♦'},{key:'c',symbol:'♣'}];
 const DEFAULT_RING_STAKES = [
@@ -528,8 +546,11 @@ function renderRingStakeSettings(){
 }
 
 function initialState(){
+  const now=new Date().toISOString();
   return {
-    version:1,
+    version:DATA_SCHEMA_VERSION,
+    schemaVersion:DATA_SCHEMA_VERSION,
+    meta:{createdAt:now,updatedAt:now,lastManualBackupAt:null,lastAutoBackupAt:null,migrations:[]},
     settings:{baseCurrency:'JPY',lossLimit:0,ringStakes:[...DEFAULT_RING_STAKES]},
     bankroll:{startingAmount:0,cashBuyIn:0,tournamentBuyIn:0,cashTargetBuyIns:30,tournamentTargetBuyIns:100,transactions:[]},
     venues:[],
@@ -538,46 +559,121 @@ function initialState(){
     hands:[]
   };
 }
-
+function validId(value){return typeof value==='string'&&value.trim().length>0;}
+function normalizedId(value){return validId(value)?value.trim():uid();}
+function migrateToSchema5(source){
+  const migrated={...source};
+  const oldSchema=num(source.schemaVersion||source.version||1);
+  const sessions=Array.isArray(source.sessions)?source.sessions.map(session=>({
+    ...session,
+    id:normalizedId(session.id),
+    chipMode:session.chipMode||(session.reflected?'stored':'cash'),
+    chipDelta:num(session.chipDelta),
+    reflected:Boolean(session.reflected||session.chipMode==='stored'||session.chipMode==='purchase')
+  })):[];
+  const chipTransactions=Array.isArray(source.chipTransactions)?source.chipTransactions.map(tx=>({
+    ...tx,id:normalizedId(tx.id),source:tx.source||'manual',sessionId:tx.sessionId||''
+  })):[];
+  const venues=Array.isArray(source.venues)?source.venues.map(venue=>{
+    const venueId=normalizedId(venue.id);
+    if(Number.isFinite(Number(venue.openingChipBalance))){
+      return {...venue,id:venueId,openingChipBalance:num(venue.openingChipBalance)};
+    }
+    const txTotal=chipTransactions.filter(tx=>tx.venueId===venue.id).reduce((sum,tx)=>sum+num(tx.amount),0);
+    const sessionTotal=sessions.filter(session=>session.venueId===venue.id&&session.reflected).reduce((sum,session)=>sum+num(session.chipDelta),0);
+    const opening=PokerCore.deriveOpeningBalance(num(venue.chipBalance),txTotal,sessionTotal);
+    return {...venue,id:venueId,openingChipBalance:opening};
+  }):[];
+  migrated.venues=venues;
+  migrated.sessions=sessions;
+  migrated.chipTransactions=chipTransactions;
+  migrated.schemaVersion=DATA_SCHEMA_VERSION;
+  migrated.version=DATA_SCHEMA_VERSION;
+  migrated.meta={
+    createdAt:source.meta?.createdAt||new Date().toISOString(),
+    updatedAt:new Date().toISOString(),
+    lastManualBackupAt:source.meta?.lastManualBackupAt||null,
+    lastAutoBackupAt:source.meta?.lastAutoBackupAt||null,
+    migrations:[...(Array.isArray(source.meta?.migrations)?source.meta.migrations:[]),...(oldSchema<DATA_SCHEMA_VERSION?[{from:oldSchema,to:DATA_SCHEMA_VERSION,at:new Date().toISOString()}]:[])]
+  };
+  return migrated;
+}
 function normalizeState(raw){
   const base=initialState();
-  const source=raw&&typeof raw==='object'?raw:{};
+  const source=migrateToSchema5(raw&&typeof raw==='object'?raw:{});
+  const venueIds=new Set();
+  const venues=(Array.isArray(source.venues)?source.venues:[]).map(venue=>{
+    let id=normalizedId(venue.id);while(venueIds.has(id))id=uid();venueIds.add(id);
+    return {
+      id,name:String(venue.name||'').trim(),currency:String(venue.currency||'JPY').trim().toUpperCase(),
+      openingChipBalance:num(venue.openingChipBalance),fxRate:num(venue.fxRate)>0?num(venue.fxRate):1,
+      notes:String(venue.notes||'')
+    };
+  });
+  const sessionIds=new Set();
+  const sessions=(Array.isArray(source.sessions)?source.sessions:[]).map(session=>{
+    let id=normalizedId(session.id);while(sessionIds.has(id))id=uid();sessionIds.add(id);
+    const chipMode=['stored','cash','purchase'].includes(session.chipMode)?session.chipMode:(session.reflected?'stored':'cash');
+    return {...session,id,chipMode,reflected:chipMode!=='cash',chipDelta:num(session.chipDelta),createdAt:num(session.createdAt)||Date.now()};
+  });
+  const txIds=new Set();
+  const chipTransactions=(Array.isArray(source.chipTransactions)?source.chipTransactions:[]).map(tx=>{
+    let id=normalizedId(tx.id);while(txIds.has(id))id=uid();txIds.add(id);
+    return {...tx,id,amount:num(tx.amount),source:tx.source||'manual',sessionId:tx.sessionId||'',createdAt:num(tx.createdAt)||Date.now()};
+  });
   return {
-    ...base,
-    ...source,
-    settings:{
-      ...base.settings,
-      ...(source.settings||{}),
-      ringStakes:normalizeRingStakes(
-        Array.isArray(source.settings?.ringStakes)
-          ? source.settings.ringStakes
-          : base.settings.ringStakes
-      )
-    },
-    bankroll:{
-      ...base.bankroll,
-      ...(source.bankroll||{}),
-      transactions:Array.isArray(source.bankroll?.transactions)?source.bankroll.transactions:[]
-    },
-    venues:Array.isArray(source.venues)?source.venues:[],
-    chipTransactions:Array.isArray(source.chipTransactions)?source.chipTransactions:[],
-    sessions:Array.isArray(source.sessions)?source.sessions:[],
-    hands:Array.isArray(source.hands)?source.hands:[]
+    ...base,...source,version:DATA_SCHEMA_VERSION,schemaVersion:DATA_SCHEMA_VERSION,
+    meta:{...base.meta,...(source.meta||{}),updatedAt:new Date().toISOString()},
+    settings:{...base.settings,...(source.settings||{}),ringStakes:normalizeRingStakes(Array.isArray(source.settings?.ringStakes)?source.settings.ringStakes:base.settings.ringStakes)},
+    bankroll:{...base.bankroll,...(source.bankroll||{}),transactions:Array.isArray(source.bankroll?.transactions)?source.bankroll.transactions:[]},
+    venues,chipTransactions,sessions,hands:Array.isArray(source.hands)?source.hands:[]
   };
+}
+function loadAutoBackups(){
+  try{const value=JSON.parse(localStorage.getItem(AUTO_BACKUP_KEY));return Array.isArray(value)?value:[];}catch(error){return [];}
+}
+function saveAutoBackups(backups){
+  try{localStorage.setItem(AUTO_BACKUP_KEY,JSON.stringify(backups.slice(0,5)));return true;}catch(error){console.warn('Auto backup save failed',error);return false;}
+}
+function snapshotRawState(raw,reason,force=false){
+  if(!raw)return false;
+  const backups=loadAutoBackups();
+  const latest=backups[0];
+  if(!force&&latest&&Date.now()-new Date(latest.createdAt).getTime()<AUTO_BACKUP_INTERVAL_MS)return false;
+  try{
+    const parsed=JSON.parse(raw);
+    backups.unshift({id:uid(),createdAt:new Date().toISOString(),reason,schemaVersion:num(parsed.schemaVersion||parsed.version||1),state:parsed});
+    return saveAutoBackups(backups);
+  }catch(error){return false;}
+}
+function createAutoBackup(reason='scheduled',force=false){
+  const raw=localStorage.getItem(STORAGE_KEY);
+  const created=snapshotRawState(raw,reason,force);
+  if(created&&state?.meta)state.meta.lastAutoBackupAt=new Date().toISOString();
+  return created;
 }
 function loadState(){
   try{
-    const parsed=JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return normalizeState(parsed);
-  }catch(e){
-    console.warn('Stored data could not be loaded.',e);
-    return initialState();
-  }
+    const raw=localStorage.getItem(STORAGE_KEY);
+    if(!raw)return initialState();
+    const parsed=JSON.parse(raw);
+    const normalized=normalizeState(parsed);
+    if(num(parsed.schemaVersion||parsed.version)!==DATA_SCHEMA_VERSION)localStorage.setItem(STORAGE_KEY,JSON.stringify(normalized));
+    return normalized;
+  }catch(error){console.warn('Stored data could not be loaded.',error);return initialState();}
 }
-function saveState(){ try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state));return true;}catch(e){console.warn('Save failed.',e);showToast('端末への保存に失敗しました');return false;} }
-function uid(){ return `${Date.now()}-${Math.random().toString(16).slice(2)}`; }
+function saveState(options={}){
+  try{
+    if(options.backup!==false)createAutoBackup(options.reason||'daily-save',Boolean(options.forceBackup));
+    state.schemaVersion=DATA_SCHEMA_VERSION;state.version=DATA_SCHEMA_VERSION;
+    state.meta={...(state.meta||{}),updatedAt:new Date().toISOString()};
+    localStorage.setItem(STORAGE_KEY,JSON.stringify(state));
+    return true;
+  }catch(error){console.warn('Save failed.',error);showToast('端末への保存に失敗しました');return false;}
+}
+function uid(){ return globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 function num(v){ const n=Number(v); return Number.isFinite(n)?n:0; }
-function today(){ return new Date().toISOString().slice(0,10); }
+function today(){ return PokerCore.localDateString(new Date()); }
 function esc(v=''){ return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function fmt(n,currency=state.settings.baseCurrency){
   const value=num(n);
@@ -597,6 +693,53 @@ function signedPoints(n,currency=''){
   return `${num(n)>0?'+':''}${fmtPoints(n,currency)}`;
 }
 function pct(n){ return `${num(n).toFixed(1)}%`; }
+function venueChipBalance(venueId,subject=state){
+  const venue=subject.venues.find(item=>item.id===venueId);if(!venue)return 0;
+  return PokerCore.calculateVenueBalance({
+    openingBalance:num(venue.openingChipBalance),
+    transactions:subject.chipTransactions.filter(tx=>tx.venueId===venueId),
+    sessions:subject.sessions.filter(session=>session.venueId===venueId&&session.reflected)
+  });
+}
+function venueChipValueBase(venue,subject=state){return venueChipBalance(venue.id,subject)*num(venue.fxRate);}
+function isValidDate(value){return PokerCore.isValidIsoDate(value);}
+function clearFormError(form){form?.querySelector('.form-validation')?.remove();}
+function reportFormError(form,message,field){
+  clearFormError(form);
+  const box=document.createElement('div');box.className='form-validation';box.setAttribute('role','alert');box.textContent=message;
+  form.prepend(box);if(field){field.focus?.();field.scrollIntoView?.({behavior:'smooth',block:'center'});}return false;
+}
+function auditStateData(subject){
+  const errors=[],warnings=[];
+  if(num(subject.schemaVersion)!==DATA_SCHEMA_VERSION)warnings.push(`データ形式がv${subject.schemaVersion||'?'}です。保存時にv${DATA_SCHEMA_VERSION}へ移行されます。`);
+  const collections=[['店舗',subject.venues],['セッション',subject.sessions],['チップ取引',subject.chipTransactions],['ハンドメモ',subject.hands],['入出金',subject.bankroll?.transactions||[]]];
+  collections.forEach(([label,items])=>{const ids=new Set();items.forEach((item,index)=>{if(!validId(item.id))errors.push(`${label}${index+1}: IDがありません`);else if(ids.has(item.id))errors.push(`${label}: ID ${item.id} が重複しています`);else ids.add(item.id);});});
+  const venueIds=new Set(subject.venues.map(v=>v.id));
+  subject.venues.forEach(v=>{if(!v.name)errors.push('店舗名が空です');if(num(v.fxRate)<=0)errors.push(`${v.name||'店舗'}: 換算レートが0以下です`);if(num(v.openingChipBalance)<0)errors.push(`${v.name||'店舗'}: 導入時残高がマイナスです`);});
+  subject.sessions.forEach(s=>{if(!isValidDate(s.date))errors.push(`セッション ${s.id}: 日付が不正です`);if(!['cash','tournament'].includes(s.type))errors.push(`セッション ${s.id}: 種別が不正です`);if(s.venueId&&!venueIds.has(s.venueId))errors.push(`セッション ${s.id}: 存在しない店舗を参照しています`);if(num(s.fxRate)<=0)errors.push(`セッション ${s.id}: 換算レートが0以下です`);if(num(s.buyIn)<0||num(s.expenses)<0||num(s.hours)<0)errors.push(`セッション ${s.id}: 負の入力値があります`);if(s.type==='tournament'&&num(s.field)>0&&num(s.place)>num(s.field))errors.push(`セッション ${s.id}: 順位が参加人数を超えています`);});
+  subject.chipTransactions.forEach(tx=>{if(!venueIds.has(tx.venueId))errors.push(`チップ取引 ${tx.id}: 存在しない店舗を参照しています`);if(!isValidDate(tx.date))errors.push(`チップ取引 ${tx.id}: 日付が不正です`);if(!num(tx.amount))warnings.push(`チップ取引 ${tx.id}: 金額が0です`);if(tx.source==='session'&&tx.sessionId&&!subject.sessions.some(s=>s.id===tx.sessionId))errors.push(`チップ取引 ${tx.id}: セッション参照が不正です`);});
+  subject.bankroll.transactions.forEach(tx=>{if(!isValidDate(tx.date))errors.push(`入出金 ${tx.id}: 日付が不正です`);if(!num(tx.amount))warnings.push(`入出金 ${tx.id}: 金額が0です`);});
+  subject.venues.forEach(v=>{const balance=venueChipBalance(v.id,subject);if(balance<0)warnings.push(`${v.name}: チップ残高が ${fmtPoints(balance,v.currency)} です`);});
+  return {errors,warnings,ok:errors.length===0};
+}
+function validateSessionInput(){
+  const form=document.getElementById('sessionForm');clearFormError(form);
+  const date=document.getElementById('sessionDate');if(!isValidDate(date.value))return reportFormError(form,'日付を正しく入力してください。',date);
+  const fx=document.getElementById('sessionFx');if(num(fx.value)<=0)return reportFormError(form,'換算レートは0より大きい値にしてください。',fx);
+  const expenses=document.getElementById('sessionExpenses');if(num(expenses.value)<0)return reportFormError(form,'経費は0以上にしてください。',expenses);
+  const venueId=document.getElementById('sessionVenue').value;
+  if(currentSessionType==='cash'){
+    const stakes=document.getElementById('cashStakes');if(!stakes.value)return reportFormError(form,'リングステークスを選択してください。',stakes);
+    const buyIn=document.getElementById('cashBuyIn');if(num(buyIn.value)<=0)return reportFormError(form,'バイインは0より大きい値にしてください。',buyIn);
+    const cashOut=document.getElementById('cashOut');if(num(cashOut.value)<0)return reportFormError(form,'終了時チップは0以上にしてください。',cashOut);
+    const mode=document.getElementById('sessionChipMode').value;if(mode!=='cash'&&!venueId)return reportFormError(form,'店舗チップへ反映する場合は店舗を選択してください。',document.getElementById('sessionVenue'));
+  }else{
+    const buyIn=document.getElementById('tournamentBuyIn');if(num(buyIn.value)<=0)return reportFormError(form,'トーナメントのバイインは0より大きい値にしてください。',buyIn);
+    const field=num(document.getElementById('tournamentField').value),place=num(document.getElementById('tournamentPlace').value);if(field>0&&place>field)return reportFormError(form,'順位は参加人数以下にしてください。',document.getElementById('tournamentPlace'));
+  }
+  return true;
+}
+
 function venueById(id){ return state.venues.find(v=>v.id===id); }
 function sessionProfitLocal(s){ return num(s.profitLocal); }
 function sessionProfitBase(s){ return num(s.profitBase); }
@@ -669,7 +812,7 @@ function renderHome(){
   const monthKey=today().slice(0,7);
   const monthSessions=state.sessions.filter(s=>String(s.date||'').startsWith(monthKey));
   const monthProfit=monthSessions.reduce((sum,s)=>sum+sessionProfitBase(s),0);
-  const chipValue=state.venues.reduce((sum,venue)=>sum+num(venue.chipBalance)*num(venue.fxRate),0);
+  const chipValue=state.venues.reduce((sum,venue)=>sum+venueChipValueBase(venue),0);
   const bankroll=currentBankroll();
   const venuePerformance=state.venues.map(venue=>({
     venue,
@@ -691,7 +834,7 @@ function renderHome(){
 
   document.getElementById('homeInsights').innerHTML=`
     <article class="insight-card"><span>現在のバンクロール</span><strong class="${bankroll>=0?'positive':'negative'}">${fmt(bankroll,state.settings.baseCurrency)}</strong><small>開始資金・収支・入出金</small></article>
-    <article class="insight-card"><span>店舗チップ総額</span><strong>${fmt(chipValue,state.settings.baseCurrency)}</strong><small>各店舗残高を換算</small></article>
+    <article class="insight-card"><span>店舗チップ総額</span><strong>${fmt(chipValue,state.settings.baseCurrency)}</strong><small>総資産の内訳（足し算不要）</small></article>
     <article class="insight-card"><span>今月の収支</span><strong class="${monthProfit>=0?'positive':'negative'}">${signed(monthProfit,state.settings.baseCurrency)}</strong><small>${monthSessions.length}セッション</small></article>
     <article class="insight-card"><span>好成績の店舗</span><strong>${bestVenue?esc(bestVenue.venue.name):'—'}</strong><small>${bestVenue?signed(bestVenue.profit,state.settings.baseCurrency):'データなし'}</small></article>`;
 
@@ -773,7 +916,8 @@ function setSessionType(type){
   document.getElementById('tournamentFields').classList.toggle('hidden',type!=='tournament');
   document.getElementById('cashBuyIn').required=type==='cash';
   document.getElementById('cashOut').required=type==='cash';
-  document.getElementById('reflectChips').checked=type==='cash';
+  document.getElementById('sessionChipModeField').classList.toggle('hidden',type!=='cash');
+  if(type!=='cash')document.getElementById('sessionChipMode').value='cash';
   updateSessionPreview();
 }
 document.querySelectorAll('[data-session-type]').forEach(b=>b.addEventListener('click',()=>setSessionType(b.dataset.sessionType)));
@@ -802,12 +946,30 @@ function calculateFormProfit(){
   const buyIn=num(document.getElementById('tournamentBuyIn').value),reentry=num(document.getElementById('tournamentReentry').value),prize=num(document.getElementById('tournamentPrize').value);
   return {profit:prize-buyIn-reentry-expenses,cost:buyIn+reentry+expenses,chipDelta:prize-buyIn-reentry};
 }
+function updateSessionChipModeHint(){
+  const mode=document.getElementById('sessionChipMode').value;
+  const hints={stored:'保有チップからバイインを差し引き、終了時チップを残高へ戻します。',cash:'現金で直接参加した扱いです。店舗チップ残高は変わりません。',purchase:'バイイン額のチップ購入を自動記録し、そのチップで参加します。手動で同じ購入を記録しないでください。'};
+  document.getElementById('sessionChipModeHint').textContent=hints[mode]||'';
+}
+document.getElementById('sessionChipMode').addEventListener('change',()=>{updateSessionChipModeHint();updateSessionPreview();});
 function updateSessionPreview(){
   const c=calculateFormProfit(),fx=num(document.getElementById('sessionFx').value)||1;
   const venue=venueById(document.getElementById('sessionVenue').value),currency=venue?.currency||'LOCAL';
   const el=document.getElementById('sessionPreview');
   const baseProfit=c.profit*fx;
-  el.innerHTML=`現地収支：<strong class="${c.profit>=0?'positive':'negative'}">${signedPoints(c.profit,currency)}</strong><br>基準通貨：<strong>${signed(baseProfit,state.settings.baseCurrency)}</strong>`;
+  let chipLine='';
+  const mode=document.getElementById('sessionChipMode').value;
+  if(currentSessionType==='cash'&&venue){
+    const editingId=document.getElementById('sessionId').value;
+    const oldSession=editingId?state.sessions.find(session=>session.id===editingId):null;
+    const oldSessionDelta=oldSession?.venueId===venue.id&&oldSession.reflected?num(oldSession.chipDelta):0;
+    const oldAutoPurchase=state.chipTransactions.filter(tx=>tx.venueId===venue.id&&tx.source==='session'&&tx.sessionId===editingId).reduce((sum,tx)=>sum+num(tx.amount),0);
+    const currentBalance=venueChipBalance(venue.id)-oldSessionDelta-oldAutoPurchase;
+    const purchase=mode==='purchase'?num(document.getElementById('cashBuyIn').value):0;
+    const delta=mode==='cash'?0:c.chipDelta;
+    chipLine=`<br>店舗チップ：<strong>${fmtPoints(currentBalance+purchase+delta,currency)}</strong> <span class="muted">（編集前 ${fmtPoints(venueChipBalance(venue.id),currency)}）</span>`;
+  }
+  el.innerHTML=`現地収支：<strong class="${c.profit>=0?'positive':'negative'}">${signedPoints(c.profit,currency)}</strong><br>基準通貨：<strong>${signed(baseProfit,state.settings.baseCurrency)}</strong>${chipLine}`;
   const status=document.getElementById('sessionStatusBar');
   if(status){
     const venue=venueById(document.getElementById('sessionVenue').value);
@@ -834,6 +996,8 @@ function resetSessionForm(){
   document.getElementById('sessionExpenses').value=0;
   document.getElementById('tournamentReentry').value=0;
   document.getElementById('tournamentPrize').value=0;
+  document.getElementById('sessionChipMode').value='stored';
+  updateSessionChipModeHint();
   document.getElementById('cancelEditBtn').classList.add('hidden');
   document.getElementById('sessionSubmit').textContent='セッションを保存';
   setSessionType(uiState.lastSessionType||'cash');
@@ -851,20 +1015,20 @@ document.getElementById('cancelEditBtn').addEventListener('click',resetSessionFo
 
 document.getElementById('sessionForm').addEventListener('submit',e=>{
   e.preventDefault();
+  if(!validateSessionInput())return;
   const editingId=document.getElementById('sessionId').value;
-  const old=editingId?state.sessions.find(s=>s.id===editingId):null;
-  if(old&&old.reflected&&old.venueId){
-    const oldVenue=venueById(old.venueId);if(oldVenue)oldVenue.chipBalance=num(oldVenue.chipBalance)-num(old.chipDelta);
-  }
-  const calc=calculateFormProfit(),venueId=document.getElementById('sessionVenue').value;
+  const old=editingId?state.sessions.find(session=>session.id===editingId):null;
+  const calc=calculateFormProfit();
+  const venueId=document.getElementById('sessionVenue').value;
   const fx=num(document.getElementById('sessionFx').value)||1;
-  const reflected=document.getElementById('reflectChips').checked&&!!venueId;
+  const chipMode=currentSessionType==='cash'?document.getElementById('sessionChipMode').value:'cash';
+  const sessionId=editingId||uid();
   const session={
-    id:editingId||uid(),type:currentSessionType,date:document.getElementById('sessionDate').value,
+    id:sessionId,type:currentSessionType,date:document.getElementById('sessionDate').value,
     venueId,fxRate:fx,expenses:num(document.getElementById('sessionExpenses').value),
     notes:document.getElementById('sessionNotes').value.trim(),profitLocal:calc.profit,
-    profitBase:calc.profit*fx,costLocal:calc.cost,chipDelta:reflected?calc.chipDelta:0,reflected,
-    createdAt:old?.createdAt||Date.now(),
+    profitBase:calc.profit*fx,costLocal:calc.cost,chipMode,chipDelta:chipMode==='cash'?0:calc.chipDelta,reflected:chipMode!=='cash',
+    createdAt:old?.createdAt||Date.now(),updatedAt:Date.now(),
     hours:currentSessionType==='cash'?num(document.getElementById('cashHours').value):num(document.getElementById('tournamentHours').value),
     stakes:currentSessionType==='cash'?document.getElementById('cashStakes').value.trim():'',
     buyIn:currentSessionType==='cash'?num(document.getElementById('cashBuyIn').value):num(document.getElementById('tournamentBuyIn').value),
@@ -875,16 +1039,14 @@ document.getElementById('sessionForm').addEventListener('submit',e=>{
     reentry:currentSessionType==='tournament'?num(document.getElementById('tournamentReentry').value):0,
     prize:currentSessionType==='tournament'?num(document.getElementById('tournamentPrize').value):0
   };
-  if(reflected){
-    const v=venueById(venueId);if(v)v.chipBalance=num(v.chipBalance)+session.chipDelta;
+  state.chipTransactions=state.chipTransactions.filter(tx=>!(tx.source==='session'&&tx.sessionId===sessionId));
+  if(chipMode==='purchase'){
+    state.chipTransactions.push({id:uid(),venueId,date:session.date,type:'purchase',amount:session.buyIn,source:'session',sessionId,memo:'セッション開始時の自動購入',createdAt:Date.now()});
   }
-  if(editingId)state.sessions=state.sessions.map(s=>s.id===editingId?session:s);else state.sessions.push(session);
-  updateUiState({
-    lastSessionType:currentSessionType,
-    lastVenueId:venueId,
-    lastStake:currentSessionType==='cash'?session.stakes:uiState.lastStake
-  });
-  saveState();resetSessionForm();renderSessions();renderHome();showToast(editingId?'更新しました':'保存しました');
+  if(editingId)state.sessions=state.sessions.map(item=>item.id===editingId?session:item);else state.sessions.push(session);
+  updateUiState({lastSessionType:currentSessionType,lastVenueId:venueId,lastStake:currentSessionType==='cash'?session.stakes:uiState.lastStake});
+  saveState({reason:editingId?'session-edit':'session-create'});
+  resetSessionForm();renderSessions();renderHome();renderVenues();showToast(editingId?'更新しました':'保存しました');
 });
 
 function sessionCardHtml(s){
@@ -952,7 +1114,8 @@ function editSession(id){
   document.getElementById('sessionId').value=s.id;document.getElementById('sessionDate').value=s.date;
   document.getElementById('sessionVenue').value=s.venueId||'';document.getElementById('sessionFx').value=s.fxRate||1;
   document.getElementById('sessionExpenses').value=s.expenses||0;document.getElementById('sessionNotes').value=s.notes||'';
-  document.getElementById('reflectChips').checked=!!s.reflected;
+  document.getElementById('sessionChipMode').value=s.chipMode||(s.reflected?'stored':'cash');
+  updateSessionChipModeHint();
   if(s.type==='cash'){
     ensureCashStakeOption(s.stakes||'');
     document.getElementById('cashStakes').value=s.stakes||'';document.getElementById('cashHours').value=s.hours||'';
@@ -971,8 +1134,8 @@ function updateFxHintOnly(){
 }
 function deleteSession(id){
   const s=state.sessions.find(x=>x.id===id);if(!s||!confirm('このセッションを削除しますか？'))return;
-  if(s.reflected&&s.venueId){const v=venueById(s.venueId);if(v)v.chipBalance=num(v.chipBalance)-num(s.chipDelta);}
   state.sessions=state.sessions.filter(x=>x.id!==id);
+  state.chipTransactions=state.chipTransactions.filter(tx=>!(tx.source==='session'&&tx.sessionId===id));
   saveState();
   renderSessions();
   renderHome();
@@ -1017,11 +1180,12 @@ function updateChipTransactionPreview(){
     return;
   }
   const delta=type==='purchase'?amount:-amount;
-  const after=num(venue.chipBalance)+delta;
-  badge.textContent=`現在 ${fmtPoints(venue.chipBalance,venue.currency)}`;
+  const currentBalance=venueChipBalance(venue.id);
+  const after=currentBalance+delta;
+  badge.textContent=`現在 ${fmtPoints(currentBalance,venue.currency)}`;
   preview.innerHTML=`${type==='purchase'?'購入後':'換金後'}の残高：
     <strong class="${after>=0?'positive':'negative'}">${fmtPoints(after,venue.currency)}</strong>
-    <br><span class="muted">${fmtPoints(venue.chipBalance,venue.currency)} ${delta>=0?'+':'−'} ${fmtPoints(Math.abs(delta),venue.currency)}</span>`;
+    <br><span class="muted">${fmtPoints(currentBalance,venue.currency)} ${delta>=0?'+':'−'} ${fmtPoints(Math.abs(delta),venue.currency)}</span>`;
 }
 ['chipTransactionVenue','chipTransactionType','chipTransactionAmount'].forEach(id=>{
   document.getElementById(id).addEventListener('input',updateChipTransactionPreview);
@@ -1031,22 +1195,26 @@ document.getElementById('chipTransactionFilter').addEventListener('change',rende
 
 document.getElementById('chipTransactionForm').addEventListener('submit',e=>{
   e.preventDefault();
+  clearFormError(e.target);
   const venue=venueById(document.getElementById('chipTransactionVenue').value);
-  const rawAmount=Math.max(0,num(document.getElementById('chipTransactionAmount').value));
-  if(!venue||rawAmount<=0)return;
+  const date=document.getElementById('chipTransactionDate');
+  const amountField=document.getElementById('chipTransactionAmount');
+  const rawAmount=Math.max(0,num(amountField.value));
+  if(!venue)return reportFormError(e.target,'店舗を選択してください。',document.getElementById('chipTransactionVenue'));
+  if(!isValidDate(date.value))return reportFormError(e.target,'日付を正しく入力してください。',date);
+  if(rawAmount<=0)return reportFormError(e.target,'チップ額は0より大きい値にしてください。',amountField);
   const type=document.getElementById('chipTransactionType').value;
   const signedAmount=type==='purchase'?rawAmount:-rawAmount;
-  if(type==='cashout'&&num(venue.chipBalance)<rawAmount){
-    if(!confirm(`換金額が現在のチップ残高を超えています。残高がマイナスになりますが記録しますか？`))return;
+  if(type==='cashout'&&venueChipBalance(venue.id)<rawAmount){
+    return reportFormError(e.target,`換金額が現在残高 ${fmtPoints(venueChipBalance(venue.id),venue.currency)} を超えています。`,amountField);
   }
-  venue.chipBalance=num(venue.chipBalance)+signedAmount;
   state.chipTransactions.push({
     id:uid(),
     venueId:venue.id,
     date:document.getElementById('chipTransactionDate').value,
     type,
     amount:signedAmount,
-    memo:document.getElementById('chipTransactionMemo').value.trim(),
+    memo:document.getElementById('chipTransactionMemo').value.trim(),source:'manual',sessionId:'',
     createdAt:Date.now()
   });
   saveState();
@@ -1085,8 +1253,6 @@ document.getElementById('chipTransactionList').addEventListener('click',e=>{
   if(!button)return;
   const transaction=state.chipTransactions.find(t=>t.id===button.dataset.deleteChipTransaction);
   if(!transaction||!confirm('この履歴を削除し、店舗のチップ残高も元に戻しますか？'))return;
-  const venue=venueById(transaction.venueId);
-  if(venue)venue.chipBalance=num(venue.chipBalance)-num(transaction.amount);
   state.chipTransactions=state.chipTransactions.filter(t=>t.id!==transaction.id);
   saveState();renderVenues();showToast('履歴を削除しました');
 });
@@ -1095,13 +1261,16 @@ document.getElementById('venueForm').addEventListener('submit',e=>{
   e.preventDefault();
   const id=document.getElementById('venueId').value;
   const old=id?venueById(id):null;
-  const venue={
-    id:id||uid(),name:document.getElementById('venueName').value.trim(),
-    currency:(document.getElementById('venueCurrency').value.trim()||'JPY').toUpperCase(),
-    chipBalance:num(document.getElementById('venueBalance').value),
-    fxRate:num(document.getElementById('venueFx').value)||1,
-    notes:document.getElementById('venueNotes').value.trim()
-  };
+  clearFormError(e.target);
+  const name=document.getElementById('venueName').value.trim();
+  const currency=(document.getElementById('venueCurrency').value.trim()||'JPY').toUpperCase();
+  const openingChipBalance=num(document.getElementById('venueBalance').value);
+  const fxRate=num(document.getElementById('venueFx').value);
+  if(!name)return reportFormError(e.target,'店舗名を入力してください。',document.getElementById('venueName'));
+  if(!/^[A-Z0-9]{2,6}$/.test(currency))return reportFormError(e.target,'通貨・ポイント単位は2〜6文字の英数字にしてください。',document.getElementById('venueCurrency'));
+  if(openingChipBalance<0)return reportFormError(e.target,'導入時残高は0以上にしてください。',document.getElementById('venueBalance'));
+  if(fxRate<=0)return reportFormError(e.target,'換算レートは0より大きい値にしてください。',document.getElementById('venueFx'));
+  const venue={id:id||uid(),name,currency,openingChipBalance,fxRate,notes:document.getElementById('venueNotes').value.trim()};
   if(old)state.venues=state.venues.map(v=>v.id===id?venue:v);else state.venues.push(venue);
   saveState();resetVenueForm();renderVenues();showToast(id?'店舗を更新しました':'店舗を追加しました');
 });
@@ -1121,19 +1290,20 @@ function renderVenues(){
     const profitA=state.sessions.filter(s=>s.venueId===a.id).reduce((sum,s)=>sum+sessionProfitBase(s),0);
     const profitB=state.sessions.filter(s=>s.venueId===b.id).reduce((sum,s)=>sum+sessionProfitBase(s),0);
     if(sort==='profit')return profitB-profitA;
-    if(sort==='balance')return num(b.chipBalance)*num(b.fxRate)-num(a.chipBalance)*num(a.fxRate);
+    if(sort==='balance')return venueChipValueBase(b)-venueChipValueBase(a);
     return state.venues.indexOf(a)-state.venues.indexOf(b);
   });
   wrap.innerHTML=venues.length?venues.map(v=>{
     const sessions=state.sessions.filter(s=>s.venueId===v.id),profit=sessions.reduce((a,s)=>a+sessionProfitLocal(s),0);
     const cash=sessions.filter(s=>s.type==='cash'),hours=cash.reduce((a,s)=>a+num(s.hours),0);
+    const chipBalance=venueChipBalance(v.id);
     const chipTx=state.chipTransactions.filter(t=>t.venueId===v.id);
     const purchased=chipTx.filter(t=>t.amount>0).reduce((a,t)=>a+num(t.amount),0);
     const cashedOut=Math.abs(chipTx.filter(t=>t.amount<0).reduce((a,t)=>a+num(t.amount),0));
     return `<article class="log-card venue-card">
       <div class="log-top"><div><strong>${esc(v.name)}</strong><div class="log-meta">${esc(v.currency)}・換算 ${num(v.fxRate)} ${esc(state.settings.baseCurrency)}</div></div>
       <div class="log-profit ${profit>=0?'positive':'negative'}">${signedPoints(profit,v.currency)}</div></div>
-      <div class="balance">${fmtPoints(v.chipBalance,v.currency)}</div><div class="log-meta">現在のチップ残高（約 ${fmt(v.chipBalance*v.fxRate,state.settings.baseCurrency)}）</div>
+      <div class="balance">${fmtPoints(chipBalance,v.currency)}</div><div class="log-meta">台帳から自動計算（約 ${fmt(chipBalance*v.fxRate,state.settings.baseCurrency)}）</div>
       <div class="venue-stats"><div><strong>${sessions.length}</strong><span>セッション</span></div><div><strong>${hours?fmtPoints(cash.reduce((a,s)=>a+sessionProfitLocal(s),0)/hours,v.currency):'—'}</strong><span>リング時給</span></div><div><strong>${sessions.filter(s=>s.type==='tournament').length}</strong><span>MTT回数</span></div></div>
       ${chipTx.length?`<div class="chip-flow-summary"><span>購入 ${fmtPoints(purchased,v.currency)}</span><span>換金 ${fmtPoints(cashedOut,v.currency)}</span></div>`:''}
       ${v.notes?`<p class="log-note">${esc(v.notes)}</p>`:''}
@@ -1151,7 +1321,7 @@ document.getElementById('venueList').addEventListener('click',e=>{
     const v=venueById(edit.dataset.editVenue);if(!v)return;
     openCollapsible('venue-input');
     document.getElementById('venueId').value=v.id;document.getElementById('venueName').value=v.name;document.getElementById('venueCurrency').value=v.currency;
-    document.getElementById('venueBalance').value=v.chipBalance;document.getElementById('venueFx').value=v.fxRate;document.getElementById('venueNotes').value=v.notes||'';
+    document.getElementById('venueBalance').value=v.openingChipBalance||0;document.getElementById('venueFx').value=v.fxRate;document.getElementById('venueNotes').value=v.notes||'';
     window.scrollTo({top:0,behavior:'smooth'});
   }
   if(del){
@@ -1311,6 +1481,7 @@ function setOddsMode(mode,save=true){
   document.getElementById('oddsModeBadge').textContent=
     resolved==='bet'?'ベットにコール':'レイズにコール';
   if(save)updateUiState({oddsMode:resolved});
+  renderUnifiedRaiseTable();
 }
 document.querySelectorAll('[data-odds-mode]').forEach(button=>{
   button.addEventListener('click',()=>setOddsMode(button.dataset.oddsMode));
@@ -1330,59 +1501,39 @@ function oddsResultHtml({need,call,finalPot,note=''}) {
     ${note?`<p class="odds-result-note">${note}</p>`:''}`;
 }
 
-function renderOdds(){
-  const pot=Math.max(0,num(document.getElementById('oddsPot').value));
-  const bet=Math.max(0,num(document.getElementById('oddsBet').value));
-  const call=Math.max(0,num(document.getElementById('oddsCall').value));
-  const finalPot=pot+bet+call;
-  const need=finalPot?call/finalPot*100:0;
-  const bluff=pot+bet?bet/(pot+bet)*100:0;
-  const mdf=pot+bet?pot/(pot+bet)*100:0;
-  document.getElementById('oddsResult').innerHTML=oddsResultHtml({
-    need,
-    call,
-    finalPot,
-    note:`相手のブラフ損益分岐点 ${pct(bluff)}・MDF ${pct(mdf)}`
-  });
+function currentRaiseTableInputs(){
+  const mode=uiState.oddsMode||'bet';
+  if(mode==='raise')return {pot:Math.max(0,num(document.getElementById('raisePot').value)),ownBet:Math.max(0,num(document.getElementById('raiseOwnBet').value)),label:'レイズにコールの入力'};
+  return {pot:Math.max(0,num(document.getElementById('oddsPot').value)),ownBet:Math.max(0,num(document.getElementById('oddsBet').value)),label:'ベットにコールの入力'};
 }
-['oddsPot','oddsBet','oddsCall'].forEach(id=>document.getElementById(id).addEventListener('input',renderOdds));
-document.querySelectorAll('[data-pot-fraction]').forEach(b=>b.addEventListener('click',()=>{
-  const pot=num(document.getElementById('oddsPot').value),bet=Math.round(pot*num(b.dataset.potFraction)*100)/100;
-  document.getElementById('oddsBet').value=bet;document.getElementById('oddsCall').value=bet;renderOdds();
-}));
-
-
-
-function renderRaiseOdds(){
-  const pot=Math.max(0,num(document.getElementById('raisePot').value));
-  const ownBet=Math.max(0,num(document.getElementById('raiseOwnBet').value));
-  const raiseTo=Math.max(0,num(document.getElementById('raiseTo').value));
-  const call=Math.max(0,raiseTo-ownBet);
-  const finalPot=pot+ownBet+raiseTo+call;
-  const need=finalPot?call/finalPot*100:0;
-  const valid=raiseTo>=ownBet;
-  document.getElementById('raiseResult').innerHTML=valid
-    ?oddsResultHtml({
-      need,
-      call,
-      finalPot,
-      note:`自分の既投入 ${ownBet.toLocaleString()}・相手のレイズ合計 ${raiseTo.toLocaleString()}`
-    })
-    :'<span class="negative">レイズ合計額は、自分のベット額以上にしてください。</span>';
+function renderUnifiedRaiseTable(){
+  const {pot,ownBet,label}=currentRaiseTableInputs();
+  document.getElementById('raiseTableContext').textContent=label;
   const multiples=[2,2.5,3,3.5,4,5];
   document.getElementById('raiseOddsTable').innerHTML=
-    '<div class="odds-table-row header"><span>Raise to</span><span>追加コール</span><strong>必要勝率</strong></div>'+
-    multiples.map(m=>{
-      const target=ownBet*m,extra=Math.max(0,target-ownBet),total=pot+ownBet+target+extra;
-      const eq=total?extra/total*100:0;
-      return `<div class="odds-table-row"><span>${m}x</span><span>${extra.toLocaleString()}</span><strong>${pct(eq)}</strong></div>`;
+    '<div class="odds-table-row header"><span>Raise to</span><span>追加コール</span><strong>必要勝率</strong></div>'+multiples.map(multiplier=>{
+      const result=PokerCore.calculateRaiseOdds({pot,ownBet,raiseTo:ownBet*multiplier});
+      return `<div class="odds-table-row"><span>${multiplier}x</span><span>${result.call.toLocaleString()}</span><strong>${pct(result.need)}</strong></div>`;
     }).join('');
 }
+function renderOdds(){
+  const result=PokerCore.calculateBetOdds({pot:num(document.getElementById('oddsPot').value),bet:num(document.getElementById('oddsBet').value),call:num(document.getElementById('oddsCall').value)});
+  document.getElementById('oddsResult').innerHTML=oddsResultHtml({need:result.need,call:result.call,finalPot:result.finalPot,note:`相手のブラフ損益分岐点 ${pct(result.bluff)}・MDF ${pct(result.mdf)}`});
+  renderUnifiedRaiseTable();
+}
+['oddsPot','oddsBet','oddsCall'].forEach(id=>document.getElementById(id).addEventListener('input',renderOdds));
+document.querySelectorAll('[data-pot-fraction]').forEach(button=>button.addEventListener('click',()=>{
+  const pot=num(document.getElementById('oddsPot').value),bet=Math.round(pot*num(button.dataset.potFraction)*100)/100;
+  document.getElementById('oddsBet').value=bet;document.getElementById('oddsCall').value=bet;renderOdds();
+}));
+function renderRaiseOdds(){
+  const result=PokerCore.calculateRaiseOdds({pot:num(document.getElementById('raisePot').value),ownBet:num(document.getElementById('raiseOwnBet').value),raiseTo:num(document.getElementById('raiseTo').value)});
+  document.getElementById('raiseResult').innerHTML=result.valid?oddsResultHtml({need:result.need,call:result.call,finalPot:result.finalPot,note:`自分の既投入 ${result.ownBet.toLocaleString()}・相手のレイズ合計 ${result.raiseTo.toLocaleString()}`}):'<span class="negative">Raise toは自分のベット額以上にしてください。</span>';
+  renderUnifiedRaiseTable();
+}
 ['raisePot','raiseOwnBet','raiseTo'].forEach(id=>document.getElementById(id).addEventListener('input',renderRaiseOdds));
-document.getElementById('calculateRaiseBtn').addEventListener('click',renderRaiseOdds);
-document.querySelectorAll('[data-raise-multiple]').forEach(b=>b.addEventListener('click',()=>{
-  document.getElementById('raiseTo').value=num(document.getElementById('raiseOwnBet').value)*num(b.dataset.raiseMultiple);
-  renderRaiseOdds();
+document.querySelectorAll('[data-raise-multiple]').forEach(button=>button.addEventListener('click',()=>{
+  document.getElementById('raiseTo').value=num(document.getElementById('raiseOwnBet').value)*num(button.dataset.raiseMultiple);renderRaiseOdds();
 }));
 
 function cardLabelFromCode(code){
@@ -1812,8 +1963,14 @@ function renderBankroll(){
   const b=state.bankroll,current=currentBankroll(),profit=bankrollSessionProfit(),adjustments=bankrollAdjustmentTotal();
   document.getElementById('bankrollCurrent').textContent=fmt(current,state.settings.baseCurrency);
   document.getElementById('bankrollCurrent').className=`bankroll-total ${current>=0?'positive':'negative'}`;
+  const chipValue=state.venues.reduce((sum,venue)=>sum+venueChipValueBase(venue),0);
+  const liquidEstimate=current-chipValue;
   document.getElementById('bankrollFormula').textContent=
-    `開始 ${fmt(b.startingAmount,state.settings.baseCurrency)} ＋ 収支 ${signed(profit,state.settings.baseCurrency)} ＋ 入出金 ${signed(adjustments,state.settings.baseCurrency)}`;
+    `総資産 ＝ 開始資金 ${fmt(b.startingAmount,state.settings.baseCurrency)} ＋ 外部入出金 ${signed(adjustments,state.settings.baseCurrency)} ＋ セッション損益 ${signed(profit,state.settings.baseCurrency)}`;
+  document.getElementById('bankrollAssetBreakdown').innerHTML=`
+    <div><span>総ポーカー資産</span><strong>${fmt(current,state.settings.baseCurrency)}</strong></div>
+    <div><span>店舗チップ（内訳）</span><strong>${fmt(chipValue,state.settings.baseCurrency)}</strong></div>
+    <div><span>手元現金等（推定）</span><strong class="${liquidEstimate>=0?'positive':'negative'}">${fmt(liquidEstimate,state.settings.baseCurrency)}</strong></div>`;
 
   const cashBuyIn=num(b.cashBuyIn),mttBuyIn=num(b.tournamentBuyIn);
   const cashCount=cashBuyIn?current/cashBuyIn:0,mttCount=mttBuyIn?current/mttBuyIn:0;
@@ -1857,17 +2014,19 @@ function renderBankroll(){
     </article>`).join(''):'<p class="empty muted">入出金の記録はまだありません。</p>';
 }
 document.getElementById('saveBankrollSettingsBtn').addEventListener('click',()=>{
-  state.bankroll.startingAmount=num(document.getElementById('bankrollStarting').value);
-  state.bankroll.cashBuyIn=num(document.getElementById('bankrollCashBuyIn').value);
-  state.bankroll.tournamentBuyIn=num(document.getElementById('bankrollTournamentBuyIn').value);
-  state.bankroll.cashTargetBuyIns=Math.max(1,num(document.getElementById('bankrollCashTarget').value)||30);
-  state.bankroll.tournamentTargetBuyIns=Math.max(1,num(document.getElementById('bankrollTournamentTarget').value)||100);
-  saveState();renderBankroll();showToast('バンクロール基準値を保存しました');
+  const container=document.getElementById('bankrollSettingsInput');clearFormError(container);
+  const starting=num(document.getElementById('bankrollStarting').value),cashBuyIn=num(document.getElementById('bankrollCashBuyIn').value),tournamentBuyIn=num(document.getElementById('bankrollTournamentBuyIn').value),cashTarget=num(document.getElementById('bankrollCashTarget').value),tournamentTarget=num(document.getElementById('bankrollTournamentTarget').value);
+  if([starting,cashBuyIn,tournamentBuyIn].some(value=>value<0))return reportFormError(container,'資金と想定バイインは0以上にしてください。',document.getElementById('bankrollStarting'));
+  if(cashTarget<1||tournamentTarget<1)return reportFormError(container,'目標回数は1以上にしてください。',document.getElementById('bankrollCashTarget'));
+  state.bankroll.startingAmount=starting;state.bankroll.cashBuyIn=cashBuyIn;state.bankroll.tournamentBuyIn=tournamentBuyIn;state.bankroll.cashTargetBuyIns=cashTarget;state.bankroll.tournamentTargetBuyIns=tournamentTarget;
+  saveState({reason:'bankroll-settings'});renderBankroll();renderHome();showToast('バンクロール基準値を保存しました');
 });
 document.getElementById('bankrollTransactionForm').addEventListener('submit',e=>{
-  e.preventDefault();
-  const raw=num(document.getElementById('bankrollTransactionAmount').value);
-  if(raw<=0)return;
+  e.preventDefault();clearFormError(e.target);
+  const date=document.getElementById('bankrollTransactionDate'),amountField=document.getElementById('bankrollTransactionAmount');
+  const raw=num(amountField.value);
+  if(!isValidDate(date.value))return reportFormError(e.target,'日付を正しく入力してください。',date);
+  if(raw<=0)return reportFormError(e.target,'金額は0より大きい値にしてください。',amountField);
   const sign=document.getElementById('bankrollTransactionType').value==='withdrawal'?-1:1;
   state.bankroll.transactions.push({
     id:uid(),
@@ -2261,10 +2420,14 @@ function renderSettings(){
   document.getElementById('lossLimit').value=state.settings.lossLimit||0;
   renderRingStakeSettings();
   updateLossLimitStatus();
+  renderBackupStatus();
 }
 document.getElementById('saveSettingsBtn').addEventListener('click',()=>{
-  state.settings.baseCurrency=(document.getElementById('baseCurrency').value.trim()||'JPY').toUpperCase();
-  state.settings.lossLimit=num(document.getElementById('lossLimit').value);saveState();renderSettings();showToast('設定を保存しました');
+  const panel=document.getElementById('appSettingsPanel');clearFormError(panel);
+  const currency=(document.getElementById('baseCurrency').value.trim()||'JPY').toUpperCase(),lossLimit=num(document.getElementById('lossLimit').value);
+  if(!/^[A-Z0-9]{2,6}$/.test(currency))return reportFormError(panel,'基準通貨は2〜6文字の英数字にしてください。',document.getElementById('baseCurrency'));
+  if(lossLimit<0)return reportFormError(panel,'損失上限は0以上にしてください。',document.getElementById('lossLimit'));
+  state.settings.baseCurrency=currency;state.settings.lossLimit=lossLimit;saveState({reason:'app-settings'});renderSettings();renderHome();showToast('設定を保存しました');
 });
 
 
@@ -2423,36 +2586,59 @@ function updateLossLimitStatus(){
 }
 
 function downloadBlob(filename,content,type){
-  const blob=new Blob([content],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  const blob=new Blob([content],{type}),url=URL.createObjectURL(blob),anchor=document.createElement('a');anchor.href=url;anchor.download=filename;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-document.getElementById('exportJsonBtn').addEventListener('click',()=>downloadBlob(`poker-mate-backup-${today()}.json`,JSON.stringify(state,null,2),'application/json'));
+function formatBackupTime(value){return value?new Date(value).toLocaleString('ja-JP'):'未実施';}
+function renderBackupStatus(){
+  const backups=loadAutoBackups();
+  const latest=backups[0];
+  const manual=state.meta?.lastManualBackupAt;
+  const overdue=!manual||Date.now()-new Date(manual).getTime()>14*24*60*60*1000;
+  document.getElementById('backupStatus').innerHTML=`
+    <div><span>最新の自動バックアップ</span><strong>${latest?formatBackupTime(latest.createdAt):'まだありません'}</strong></div>
+    <div><span>最終JSON書き出し</span><strong class="${overdue?'negative':''}">${formatBackupTime(manual)}</strong></div>
+    ${overdue?'<p>JSONバックアップを14日以上書き出していません。</p>':''}`;
+  document.getElementById('restoreAutoBackupBtn').disabled=!latest;
+}
+function csvSafe(value){const text=String(value??'');return /^[=+\-@]/.test(text)?`'${text}`:text;}
+document.getElementById('exportJsonBtn').addEventListener('click',()=>{
+  state.meta.lastManualBackupAt=new Date().toISOString();saveState({backup:false});
+  downloadBlob(`poker-mate-backup-${today()}.json`,JSON.stringify(state,null,2),'application/json');renderBackupStatus();
+});
 document.getElementById('exportCsvBtn').addEventListener('click',()=>{
   const header=['date','type','venue','currency','stakes_or_tournament','hours','profit_local','fx_rate','profit_base','notes'];
-  const rows=state.sessions.map(s=>{
-    const v=venueById(s.venueId);return [s.date,s.type,v?.name||'',v?.currency||'',s.type==='cash'?s.stakes:s.tournamentName,s.hours,s.profitLocal,s.fxRate,s.profitBase,s.notes];
-  });
-  const csv=[header,...rows].map(row=>row.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const rows=state.sessions.map(session=>{const venue=venueById(session.venueId);return [session.date,session.type,venue?.name||'',venue?.currency||'',session.type==='cash'?session.stakes:session.tournamentName,session.hours,session.profitLocal,session.fxRate,session.profitBase,session.notes];});
+  const csv=[header,...rows].map(row=>row.map(value=>`"${csvSafe(value).replace(/"/g,'""')}"`).join(',')).join('\n');
   downloadBlob(`poker-mate-sessions-${today()}.csv`,`\uFEFF${csv}`,'text/csv;charset=utf-8');
 });
 document.getElementById('importBtn').addEventListener('click',()=>document.getElementById('importFile').click());
-document.getElementById('importFile').addEventListener('change',async e=>{
-  const file=e.target.files[0];if(!file)return;
+document.getElementById('importFile').addEventListener('change',async event=>{
+  const file=event.target.files[0];if(!file)return;
   try{
     const data=JSON.parse(await file.text());
-    if(data.version&&Array.isArray(data.sessions)){
-      state=normalizeState(data);
-    }
-    else if(Array.isArray(data.sessions)){
-      const importedVenue={id:uid(),name:'旧アプリ取込',currency:'PHP',chipBalance:0,fxRate:1,notes:''};
-      state=initialState();state.venues.push(importedVenue);
-      state.sessions=data.sessions.map(s=>({id:uid(),type:'cash',date:s.date||today(),venueId:importedVenue.id,fxRate:1,expenses:0,notes:s.notes||'',profitLocal:num(s.profit),profitBase:num(s.profit),costLocal:0,chipDelta:0,reflected:false,createdAt:Date.now(),hours:num(s.hours),stakes:s.stakes||'',buyIn:0,cashOut:num(s.profit),tournamentName:'',field:0,place:0,reentry:0,prize:0}));
-    }else throw new Error('形式不明');
-    saveState();renderAll();showToast('バックアップを読み込みました');
-  }catch(err){alert('読み込みに失敗しました。Poker MateのJSONバックアップを選んでください。');}
-  e.target.value='';
+    let candidate;
+    if(data&&Array.isArray(data.sessions))candidate=normalizeState(data);
+    else throw new Error('セッション配列がありません');
+    const audit=auditStateData(candidate);
+    if(audit.errors.length)throw new Error(`読み込みを中止しました。\n${audit.errors.slice(0,8).join('\n')}`);
+    const summary=`店舗 ${candidate.venues.length}件\nセッション ${candidate.sessions.length}件\nチップ取引 ${candidate.chipTransactions.length}件\n警告 ${audit.warnings.length}件`;
+    if(!confirm(`次のバックアップを読み込みます。現在のデータは自動保存されます。\n\n${summary}\n\n続行しますか？`))return;
+    createAutoBackup('before-import',true);state=candidate;saveState({backup:false});renderAll();resetSessionForm();renderBackupStatus();showToast('検証済みバックアップを読み込みました');
+  }catch(error){alert(`読み込みに失敗しました。\n${error.message}`);}
+  event.target.value='';
+});
+document.getElementById('restoreAutoBackupBtn').addEventListener('click',()=>{
+  const latest=loadAutoBackups()[0];if(!latest)return;
+  if(!confirm(`${formatBackupTime(latest.createdAt)} の自動バックアップへ戻しますか？\n現在の状態も退避します。`))return;
+  createAutoBackup('before-auto-restore',true);state=normalizeState(latest.state);saveState({backup:false});renderAll();resetSessionForm();renderBackupStatus();showToast('自動バックアップを復元しました');
+});
+document.getElementById('runIntegrityCheckBtn').addEventListener('click',()=>{
+  const audit=auditStateData(state),box=document.getElementById('integrityResult');box.classList.remove('hidden');
+  box.innerHTML=audit.ok&&audit.warnings.length===0?'<strong class="positive">問題は見つかりませんでした。</strong>':`<strong class="${audit.errors.length?'negative':''}">エラー ${audit.errors.length}件・警告 ${audit.warnings.length}件</strong>${[...audit.errors,...audit.warnings].length?`<ul>${[...audit.errors,...audit.warnings].slice(0,20).map(item=>`<li>${esc(item)}</li>`).join('')}</ul>`:''}`;
 });
 document.getElementById('resetBtn').addEventListener('click',()=>{
-  if(confirm('すべての店舗・チップ履歴・収支・バンクロール・ハンドメモを削除します。元に戻せません。')){state=initialState();saveState();renderAll();resetSessionForm();resetVenueForm();showToast('全データを削除しました');}
+  if(!confirm('すべてのデータを削除します。削除前の状態は自動バックアップへ退避します。'))return;
+  createAutoBackup('before-reset',true);state=initialState();saveState({backup:false});renderAll();resetSessionForm();resetVenueForm();renderBackupStatus();showToast('全データを削除しました');
 });
 
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstallPrompt=e;document.getElementById('installBtn').classList.remove('hidden')});
@@ -2468,4 +2654,4 @@ function renderAll(){
   setTool(uiState.lastTool==='raise'?'odds':(uiState.lastTool||'odds'),false);
 }
 document.getElementById('sessionDate').value=today();document.getElementById('handDate').value=today();document.getElementById('bankrollTransactionDate').value=today();document.getElementById('chipTransactionDate').value=today();
-buildPnHandPicker();initializeSmartNumberInputs();initializeCollapsibleSections();resetSessionForm();renderAll();renderVisualCards();
+buildPnHandPicker();initializeSmartNumberInputs();initializeCollapsibleSections();resetSessionForm();renderAll();renderVisualCards();renderBackupStatus();

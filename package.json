@@ -1,0 +1,8 @@
+{
+  "name": "poker-mate",
+  "private": true,
+  "version": "5.0.0",
+  "scripts": {
+    "test": "node tests/run-tests.js"
+  }
+}

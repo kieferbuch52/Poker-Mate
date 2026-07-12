@@ -1378,3 +1378,23 @@ main{width:min(860px,100%);padding:14px 14px 20px}
   .pn-compact-controls label:first-child{grid-column:1/-1}
   .pn-summary-strip{grid-template-columns:repeat(2,1fr)}
 }
+
+
+/* v5.0: reliability milestone and compact odds */
+.odds-compact-inputs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.odds-compact-inputs label{min-width:0;color:var(--muted);font-size:.58rem}
+.odds-compact-inputs label span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-left:2px}
+.odds-compact-inputs input{min-height:40px;margin-top:4px;padding:8px 5px;text-align:center;font-size:.76rem}
+.unified-raise-table{margin-top:15px;padding-top:13px;border-top:1px solid rgba(255,255,255,.08)}
+.unified-raise-table h3{margin:0}
+.form-validation{padding:10px 12px;border:1px solid rgba(255,122,122,.4);border-radius:11px;background:rgba(255,122,122,.09);color:#ffc0c0;font-size:.75rem;line-height:1.5}
+.asset-breakdown{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:12px 0}
+.asset-breakdown div{min-width:0;padding:10px;border:1px solid rgba(255,255,255,.07);border-radius:11px;background:rgba(255,255,255,.03)}
+.asset-breakdown span,.asset-breakdown strong{display:block}.asset-breakdown span{color:var(--muted);font-size:.59rem}.asset-breakdown strong{overflow:hidden;margin-top:3px;text-overflow:ellipsis;white-space:nowrap;font-size:.76rem}
+.backup-status{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:12px 0}
+.backup-status div{padding:9px;border:1px solid rgba(255,255,255,.07);border-radius:10px;background:rgba(255,255,255,.03)}
+.backup-status span,.backup-status strong{display:block}.backup-status span{color:var(--muted);font-size:.58rem}.backup-status strong{margin-top:3px;font-size:.69rem}.backup-status p{grid-column:1/-1;margin:0;color:var(--danger);font-size:.68rem}
+.backup-button-grid{grid-template-columns:repeat(2,1fr)}
+.integrity-result{margin-top:10px;padding:11px;border:1px solid var(--line);border-radius:11px;background:rgba(255,255,255,.03);font-size:.7rem;line-height:1.5}.integrity-result ul{margin:8px 0 0;padding-left:18px}
+#sessionChipModeField{padding:10px;border:1px solid rgba(109,199,255,.17);border-radius:12px;background:rgba(109,199,255,.045)}
+@media(max-width:480px){.asset-breakdown{grid-template-columns:1fr}.odds-compact-inputs{gap:4px}.odds-compact-inputs input{font-size:.7rem}.backup-status{grid-template-columns:1fr}}
