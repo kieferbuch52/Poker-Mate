@@ -30,3 +30,21 @@ if(!app.includes('headsUpRfiRanges[currentHeadsUpStack]')&&!app.includes('headsU
 if(!app.includes('headsUpBbDefenseRanges[currentHeadsUpStack]')&&!app.includes('headsUpBbDefenseRanges[stack]'))throw new Error('heads-up defense not stack-aware');
 
 console.log('Range static tests passed');
+
+
+const actionConfig={
+  '40':"type:'open',size:2.5",
+  '30':"type:'open',size:2.5",
+  '25':"type:'open',size:2.3",
+  '20':"type:'open',size:2.2",
+  '15':"type:'open',size:2.0",
+  '10':"type:'shove',size:null",
+  '5':"type:'shove',size:null"
+};
+for(const [stack,snippet] of Object.entries(actionConfig)){
+  if(!app.includes(`'${stack}':{${snippet}`))throw new Error(`missing heads-up action ${stack}`);
+}
+if(!html.includes('id="rangeActionBadge"'))throw new Error('missing heads-up action badge');
+if(!app.includes("headsUpRfiRanges['10']={BTN:cloneRangeSet(headsUpShove10)}"))throw new Error('10BB RFI is not the shove range');
+if(!app.includes("headsUpRfiRanges['5']={BTN:cloneRangeSet(headsUpShove5)}"))throw new Error('5BB RFI is not the shove range');
+if(!app.includes("'hu-shove':'hu-open'"))throw new Error('missing explicit action cell classes');

@@ -1,11 +1,24 @@
 'use strict';
 
-const APP_VERSION = '6.1.2';
+const APP_VERSION = '6.1.3';
 const APP_CHANGELOG = [
+  {
+    version:'6.1.3',
+    title:'ヘッズアップの基準アクションを明示',
+    current:true,
+    changes:[
+      'ヘッズアップの各スタックにオープンまたはオールインを明記',
+      '40BB・30BBを2.5BBオープンとして表示',
+      '25BBを2.3BB、20BBを2.2BB、15BBを2.0BBオープンとして表示',
+      '10BB・5BBをオールインレンジとして表示',
+      'オープンとオールインをレンジ表の色で区別',
+      'BBディフェンスにも想定する相手のオープンサイズを表示'
+    ]
+  },
   {
     version:'6.1.2',
     title:'ヘッズアップをショートスタック中心に再設計',
-    current:true,
+    current:false,
     changes:[
       'ヘッズアップのスタックを40・30・25・20・15・10・5BBへ変更',
       'ヘッズアップの初期スタックを20BBへ変更',
@@ -585,6 +598,17 @@ function rangeFromBlacklist(remove=[]){
  * RFI means a simplified "continue candidate" that combines raise, limp,
  * and shove frequencies into one learnable table.
  */
+
+const headsUpActionConfig={
+  '40':{type:'open',size:2.5,label:'2.5BBオープン'},
+  '30':{type:'open',size:2.5,label:'2.5BBオープン'},
+  '25':{type:'open',size:2.3,label:'2.3BBオープン'},
+  '20':{type:'open',size:2.2,label:'2.2BBオープン'},
+  '15':{type:'open',size:2.0,label:'2.0BBオープン'},
+  '10':{type:'shove',size:null,label:'オールイン'},
+  '5':{type:'shove',size:null,label:'オールイン'}
+};
+
 const headsUpRfiRanges={
   '40':{BTN:rangeFromBlacklist([
     '32o','42o','52o','62o','72o','82o','92o',
@@ -651,6 +675,11 @@ const headsUpShove5=adjustedRange(headsUpShove10,[
   'T5s','T6s','T7s','T8o','T9o',
   '96s','97s','97o','85s','86s','75s','76s','65s','54s'
 ]);
+
+// At 10BB and 5BB the displayed BTN/SB table is explicitly a shove range.
+headsUpRfiRanges['10']={BTN:cloneRangeSet(headsUpShove10)};
+headsUpRfiRanges['5']={BTN:cloneRangeSet(headsUpShove5)};
+
 
 function headsUpDefense(stack,aggressive,folds=[]){
   return {
@@ -2046,13 +2075,15 @@ function rangeScenario(){
   }
   if(currentRangeGame==='headsup'){
     const stack=currentHeadsUpStack;
+    const action=headsUpActionConfig[stack];
     return {
       gameLabel:'ヘッズアップ',
       stackLabel:`${stack}BB`,
-      context:`BTN/SB対BB・${stack}BBのショートスタック学習用レンジ`,
+      context:`BTN/SB対BB・${stack}BB・基準アクション ${action.label}`,
       positions:['BTN'],
       rfi:headsUpRfiRanges[stack],
-      defense:headsUpBbDefenseRanges[stack]
+      defense:headsUpBbDefenseRanges[stack],
+      rfiAction:action
     };
   }
   const stack=currentTournamentStack;
@@ -2104,29 +2135,60 @@ function renderRangeGrid(){
   const legend=document.getElementById('rangeLegend');
   const hint=document.getElementById('rangeHint');
   const contextBadge=document.getElementById('rangeContextBadge');
+  const actionBadge=document.getElementById('rangeActionBadge');
   const contextDescription=document.getElementById('rangeContextDescription');
+  const rfiModeButton=document.querySelector('[data-range-mode="rfi"]');
 
   contextBadge.textContent=`${scenario.gameLabel}・${scenario.stackLabel}`;
   contextDescription.textContent=scenario.context;
+  rfiModeButton.textContent=currentRangeGame==='headsup'?'BTN/SBアクション':'オープンレンジ';
+
+  const headsUpAction=currentRangeGame==='headsup'?scenario.rfiAction:null;
+  actionBadge.classList.toggle('hidden',!headsUpAction);
+  if(headsUpAction){
+    const actionText=headsUpAction.type==='shove'
+      ?'ALL-IN'
+      :`OPEN ${stripNumberZeros(headsUpAction.size,1)}BB`;
+    actionBadge.textContent=currentRangeMode==='rfi'
+      ?actionText
+      :headsUpAction.type==='shove'
+        ?'vs ALL-IN'
+        :`vs OPEN ${stripNumberZeros(headsUpAction.size,1)}BB`;
+    actionBadge.classList.toggle('shove',headsUpAction.type==='shove');
+  }else{
+    actionBadge.classList.remove('shove');
+  }
 
   const activeStack=currentRangeGame==='headsup'?currentHeadsUpStack:currentTournamentStack;
   const shortStack=currentRangeGame!=='ring'&&Number(activeStack)<=15;
 
   if(currentRangeMode==='rfi'){
     if(currentRangeGame==='ring')title.textContent='リング RFIレンジ表';
-    else if(currentRangeGame==='headsup')title.textContent=`ヘッズアップ ${currentHeadsUpStack}BB BTN/SBオープン`;
-    else title.textContent=`トーナメント ${currentTournamentStack}BB RFIレンジ`;
+    else if(currentRangeGame==='headsup'){
+      const action=scenario.rfiAction;
+      title.textContent=action.type==='shove'
+        ?`ヘッズアップ ${currentHeadsUpStack}BB BTN/SB オールイン`
+        :`ヘッズアップ ${currentHeadsUpStack}BB BTN/SB ${action.label}`;
+    }else title.textContent=`トーナメント ${currentTournamentStack}BB RFIレンジ`;
 
-    legend.innerHTML=shortStack
-      ?'<span><i class="dot open"></i>参加候補</span><span><i class="dot fold"></i>フォールド</span>'
-      :'<span><i class="dot open"></i>オープン</span><span><i class="dot fold"></i>フォールド</span>';
+    if(currentRangeGame==='headsup'){
+      const action=scenario.rfiAction;
+      legend.innerHTML=action.type==='shove'
+        ?'<span><i class="dot hu-shove-dot"></i>オールイン</span><span><i class="dot fold"></i>フォールド</span>'
+        :`<span><i class="dot hu-open-dot"></i>${stripNumberZeros(action.size,1)}BBオープン</span><span><i class="dot fold"></i>フォールド</span>`;
+    }else{
+      legend.innerHTML=shortStack
+        ?'<span><i class="dot open"></i>参加候補</span><span><i class="dot fold"></i>フォールド</span>'
+        :'<span><i class="dot open"></i>オープン</span><span><i class="dot fold"></i>フォールド</span>';
+    }
 
     if(currentRangeGame==='ring'){
       hint.textContent='標準的な100BB・6-maxの学習用簡易レンジです。レーキ、相手、オープンサイズに応じて調整してください。';
     }else if(currentRangeGame==='headsup'){
-      hint.textContent=shortStack
-        ?`${currentHeadsUpStack}BBのヘッズアップでBTNを兼ねるSBから参加する簡易目安です。ミンレイズ・リンプ・オールインを参加候補としてまとめています。`
-        :`${currentHeadsUpStack}BBのヘッズアップでBTNを兼ねるSBからオープンする学習用簡易レンジです。リンプを含む混合戦略は参加候補としてまとめています。`;
+      const action=scenario.rfiAction;
+      hint.textContent=action.type==='shove'
+        ?`${currentHeadsUpStack}BBでは、色付きのハンドをBTN/SBからオールインする簡易基準として表示しています。実戦ではリンプやミンレイズを混ぜる戦略もあります。`
+        :`${currentHeadsUpStack}BBでは、色付きのハンドをBTN/SBから${action.label}する簡易基準として表示しています。実戦ではリンプや一部オールインを混ぜる戦略もあります。`;
     }else if(shortStack){
       hint.textContent=`${currentTournamentStack}BBではミンレイズとオールインが混在します。表示は参加候補の目安です。バブル・ファイナル・サテライトなどICMが強い局面では必ず調整してください。`;
     }else{
@@ -2134,9 +2196,17 @@ function renderRangeGrid(){
     }
 
     const set=scenario.rfi[currentRangePosition]||new Set();
+    const headsUpClass=currentRangeGame==='headsup'
+      ?scenario.rfiAction.type==='shove'?'hu-shove':'hu-open'
+      :'open';
+    const actionTitle=currentRangeGame==='headsup'
+      ?scenario.rfiAction.type==='shove'?'オールイン':scenario.rfiAction.label
+      :'オープン';
+
     document.getElementById('rangeGrid').innerHTML=ranks.flatMap((_,row)=>ranks.map((__,col)=>{
       const hand=handLabel(row,col);
-      return `<button class="hand-cell ${set.has(hand)?'open':''}" title="${hand}">${hand}</button>`;
+      const active=set.has(hand);
+      return `<button class="hand-cell ${active?headsUpClass:''}" title="${hand}${active?`：${actionTitle}`:'：フォールド'}">${hand}</button>`;
     })).join('');
   }else{
     if(currentRangeGame==='ring')title.textContent='リング BBディフェンス';
@@ -2150,9 +2220,10 @@ function renderRangeGrid(){
     if(currentRangeGame==='ring'){
       hint.textContent=`100BB・6-maxで${currentRangePosition}から約2.5BBオープンを受けた場合の学習用簡易レンジです。レーキが高いライブゲームではコールをやや絞ってください。`;
     }else if(currentRangeGame==='headsup'){
-      hint.textContent=shortStack
-        ?`${currentHeadsUpStack}BBのヘッズアップでBTN/SBのオープンに対する簡易目安です。青は主にオールイン候補、黄はコール候補です。`
-        :`${currentHeadsUpStack}BBのヘッズアップでBTN/SBのオープンを受けたBBの学習用簡易レンジです。青は3ベット候補、黄はコール候補です。`;
+      const action=scenario.rfiAction;
+      hint.textContent=action.type==='shove'
+        ?`${currentHeadsUpStack}BBでBTN/SBのオールインを受けたBBの簡易目安です。青はコール／オールイン継続候補、黄は補助的なコール候補です。`
+        :`${currentHeadsUpStack}BBでBTN/SBの${action.label}を受けたBBの学習用簡易レンジです。青は3ベット候補、黄はコール候補です。`;
     }else if(shortStack){
       hint.textContent=`${currentRangePosition}の約2BBオープンに対する${currentTournamentStack}BBの簡易目安です。青は主にオールイン候補、黄はコール候補です。ICMが強い場面ではオールインを慎重に調整してください。`;
     }else{
